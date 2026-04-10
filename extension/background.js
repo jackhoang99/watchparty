@@ -2,7 +2,7 @@
 
 let ws = null;
 let roomId = null;
-let serverUrl = 'http://localhost:3000';
+let serverUrl = '';
 let reconnectTimer = null;
 
 function log(...args) { console.log('[watchparty]', ...args); }
@@ -10,12 +10,12 @@ function log(...args) { console.log('[watchparty]', ...args); }
 async function loadConfig() {
   const stored = await chrome.storage.local.get(['roomId', 'serverUrl']);
   roomId = stored.roomId || null;
-  serverUrl = stored.serverUrl || 'http://localhost:3000';
+  serverUrl = stored.serverUrl || '';
 }
 
 async function connect() {
   await loadConfig();
-  if (!roomId) { log('no room configured, skipping connect'); return; }
+  if (!roomId || !serverUrl) { log('no room configured'); return; }
 
   try { if (ws) ws.close(); } catch {}
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
@@ -42,7 +42,6 @@ async function connect() {
     let msg;
     try { msg = JSON.parse(e.data); } catch { return; }
     if (msg.type === 'playback') {
-      // Push to all tabs / frames; the content script ignores tabs without a video.
       chrome.tabs.query({}, (tabs) => {
         tabs.forEach(t => {
           chrome.tabs.sendMessage(t.id, { type: 'apply-playback', playback: msg.playback })
@@ -57,13 +56,23 @@ async function connect() {
 }
 
 function scheduleReconnect() {
-  if (!roomId) return;
+  if (!roomId || !serverUrl) return;
   if (reconnectTimer) return;
   reconnectTimer = setTimeout(() => { reconnectTimer = null; connect(); }, 3000);
 }
 
 chrome.runtime.onMessage.addListener((msg, sender) => {
-  if (msg.type === 'video-event') {
+  if (msg.type === 'send-to-room') {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        type: 'source',
+        url: msg.url || '',
+        title: msg.title || ''
+      }));
+      return Promise.resolve({ ok: true });
+    }
+    return Promise.resolve({ ok: false, error: 'not connected' });
+  } else if (msg.type === 'video-event') {
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({
         type: 'playback',
@@ -80,10 +89,13 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
       }));
     }
   } else if (msg.type === 'set-room') {
-    chrome.storage.local.set({
-      roomId: msg.roomId,
-      serverUrl: msg.serverUrl || 'http://localhost:3000'
-    }).then(connect);
+    const newServerUrl = msg.serverUrl || '';
+    const newRoomId = msg.roomId || '';
+    chrome.storage.local.set({ roomId: newRoomId, serverUrl: newServerUrl }).then(() => {
+      roomId = newRoomId;
+      serverUrl = newServerUrl;
+      connect();
+    });
   } else if (msg.type === 'disconnect') {
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
     try { if (ws) ws.close(); } catch {}

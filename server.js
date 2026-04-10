@@ -59,9 +59,8 @@ function getOrCreateRoom(id) {
 function serializeRoom(room) {
   return {
     id: room.id,
-    members: Array.from(room.members.values()),
+    members: Array.from(room.members.values()).map(m => ({ id: m.id, name: m.name, color: m.color })),
     callMembers: Array.from(room.callMembers || []),
-    screenSharer: room.screenSharer || null,
     source: room.source,
     playback: room.playback,
     chat: room.chat
@@ -127,12 +126,28 @@ app.get('/r/:id', (req, res) => {
 io.on('connection', (socket) => {
   let currentRoomId = null;
 
-  socket.on('room:join', ({ roomId, name }) => {
+  socket.on('room:join', ({ roomId, name, uid }) => {
     if (!roomId) return;
     const room = getOrCreateRoom(roomId);
     const safeName = (String(name || 'guest')).slice(0, 24) || 'guest';
+    const safeUid = uid ? String(uid) : null;
+
+    // If this uid already has a socket in this room, evict the stale one
+    if (safeUid) {
+      for (const [oldSid, oldMember] of room.members) {
+        if (oldMember.uid === safeUid && oldSid !== socket.id) {
+          room.members.delete(oldSid);
+          if (room.callMembers) room.callMembers.delete(oldSid);
+          if (room.screenSharer === oldSid) room.screenSharer = null;
+          const oldSocket = io.sockets.sockets.get(oldSid);
+          if (oldSocket) { oldSocket.leave(roomId); oldSocket.disconnect(true); }
+          break;
+        }
+      }
+    }
+
     const color = COLORS[colorIdx++ % COLORS.length];
-    const member = { id: socket.id, name: safeName, color };
+    const member = { id: socket.id, name: safeName, color, uid: safeUid };
     room.members.set(socket.id, member);
     socket.join(roomId);
     currentRoomId = roomId;
@@ -165,30 +180,6 @@ io.on('connection', (socket) => {
       updatedAt: Date.now()
     };
     broadcastPlayback(currentRoomId, room.playback, socket.id);
-  });
-
-  // ---------- Screen share signaling ----------
-  socket.on('screen:start', () => {
-    if (!currentRoomId) return;
-    const room = rooms.get(currentRoomId);
-    if (!room) return;
-    room.screenSharer = socket.id;
-    io.to(currentRoomId).emit('screen:started', { id: socket.id });
-  });
-
-  socket.on('screen:stop', () => {
-    if (!currentRoomId) return;
-    const room = rooms.get(currentRoomId);
-    if (!room) return;
-    if (room.screenSharer === socket.id) {
-      room.screenSharer = null;
-      io.to(currentRoomId).emit('screen:stopped', { id: socket.id });
-    }
-  });
-
-  socket.on('screen:signal', ({ to, signal }) => {
-    if (!to || !signal) return;
-    io.to(to).emit('screen:signal', { from: socket.id, signal });
   });
 
   socket.on('chat:message', (msg) => {
@@ -259,10 +250,6 @@ io.on('connection', (socket) => {
       socket.to(currentRoomId).emit('call:peer-left', { id: socket.id });
       io.to(currentRoomId).emit('call:roster', { members: Array.from(room.callMembers) });
     }
-    if (room.screenSharer === socket.id) {
-      room.screenSharer = null;
-      socket.to(currentRoomId).emit('screen:stopped', { id: socket.id });
-    }
     if (left) socket.to(currentRoomId).emit('room:member', { left });
     maybeReap(currentRoomId);
   });
@@ -311,10 +298,11 @@ wss.on('connection', (ws) => {
       }
     } else if (msg.type === 'source') {
       room.source = {
-        type: 'extension',
+        type: 'url',
         value: String(msg.url || ''),
         title: String(msg.title || '')
       };
+      room.playback = { playing: false, currentTime: 0, updatedAt: Date.now() };
       io.to(roomId).emit('source:change', room.source);
       io.to(roomId).emit('extension:event', {
         kind: 'status',

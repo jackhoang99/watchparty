@@ -167,18 +167,13 @@
                 style="background-image: url('data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2212%22 height=%2212%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%23888%22 stroke-width=%222%22><polyline points=%226 9 12 15 18 9%22/></svg>'); background-repeat: no-repeat; background-position: right 8px center;">
           <option value="youtube">YouTube</option>
           <option value="url">Direct URL</option>
-          <option value="extension">Extension</option>
+          <option value="extension">Extension (any site)</option>
         </select>
         <input id="sourceValue" placeholder="paste a link or video URL..." autocomplete="off"
                class="flex-1 min-w-0 bg-transparent border-0 text-white text-sm px-3 py-2.5 placeholder:text-gray-600 focus:outline-none">
         <button id="loadSource"
                 class="bg-brand hover:bg-brand-hover text-white text-xs font-bold px-5 py-2 m-1 rounded transition-all duration-150 hover:shadow-lg hover:shadow-brand/25 shrink-0 active:scale-95">
           Load
-        </button>
-        <button id="shareTabBtn" type="button" title="Share a browser tab so everyone can watch"
-                class="flex items-center gap-1.5 border border-gray-600 hover:border-gray-400 bg-transparent hover:bg-white/[0.06] text-gray-300 hover:text-white text-xs font-semibold px-4 py-2 m-1 rounded transition-all duration-150 shrink-0 active:scale-95 whitespace-nowrap">
-          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-          Share tab
         </button>
       </div>
     </div>
@@ -204,34 +199,33 @@
           </div>
         </div>
 
-        <!-- Extension card with tutorial -->
+        <!-- Extension mode card -->
         <div id="card-extension" class="bg-[#141414] border border-gray-800 rounded-xl overflow-hidden text-center max-w-lg w-full" style="display:none">
           <div class="h-[3px] bg-brand"></div>
           <div class="px-10 py-10">
             <div class="mx-auto w-16 h-16 rounded-full bg-white/[0.05] flex items-center justify-center mb-6">
               <svg class="w-8 h-8 text-brand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a4 4 0 00-8 0v2"/><circle cx="12" cy="15" r="1"/></svg>
             </div>
-            <h2 class="text-white text-[1.4rem] font-bold mb-2">Extension mode</h2>
-            <p id="ext-status" class="text-sm text-gray-400 mb-6">Sync any streaming site with your room</p>
+            <h2 class="text-white text-[1.4rem] font-bold mb-2">Stream from any site</h2>
+            <p class="text-sm text-gray-400 mb-6">The extension detects videos on streaming sites and sends them to your room</p>
 
-            <!-- Step-by-step tutorial -->
             <div class="text-left max-w-sm mx-auto space-y-3">
               <div class="flex items-start gap-3">
                 <span class="shrink-0 w-6 h-6 rounded-full bg-brand/10 border border-brand/20 flex items-center justify-center text-[11px] font-bold text-brand">1</span>
-                <p class="text-sm text-gray-300 leading-snug">Install the <code class="bg-white/5 px-1.5 py-0.5 rounded text-[11px] text-gray-400">extension</code> folder as an unpacked Chrome extension from <code class="bg-white/5 px-1.5 py-0.5 rounded text-[11px] text-gray-400">chrome://extensions</code></p>
+                <p class="text-sm text-gray-300 leading-snug">Install the watchparty extension and connect it to this room</p>
               </div>
               <div class="flex items-start gap-3">
                 <span class="shrink-0 w-6 h-6 rounded-full bg-brand/10 border border-brand/20 flex items-center justify-center text-[11px] font-bold text-brand">2</span>
-                <p class="text-sm text-gray-300 leading-snug">Click the watchparty extension icon in your toolbar — it auto-detects your room code</p>
+                <p class="text-sm text-gray-300 leading-snug">Go to a streaming site (fshare, etc.) — a <strong class="text-white">Watch in party</strong> button appears on detected videos</p>
               </div>
               <div class="flex items-start gap-3">
                 <span class="shrink-0 w-6 h-6 rounded-full bg-brand/10 border border-brand/20 flex items-center justify-center text-[11px] font-bold text-brand">3</span>
-                <p class="text-sm text-gray-300 leading-snug">Click <strong class="text-white">Connect</strong>, then open your streaming site in another tab</p>
+                <p class="text-sm text-gray-300 leading-snug">Click it — the video loads in the room for <strong class="text-white">everyone</strong> to watch together</p>
               </div>
-              <div class="flex items-start gap-3">
-                <span class="shrink-0 w-6 h-6 rounded-full bg-brand/10 border border-brand/20 flex items-center justify-center text-[11px] font-bold text-brand">4</span>
-                <p class="text-sm text-gray-300 leading-snug">Play the video — everyone in the room stays in sync automatically</p>
-              </div>
+            </div>
+
+            <div class="mt-6 pt-5 border-t border-gray-800">
+              <p class="text-xs text-gray-600">Your friends only need the room link — no extension or site access required</p>
             </div>
           </div>
         </div>
@@ -239,14 +233,6 @@
       </div>
       <div id="yt-wrap"><div id="yt-player"></div></div>
       <video id="native-player" controls playsinline></video>
-      <!-- Screen share viewer -->
-      <video id="screen-player" class="w-full h-full object-contain bg-black" style="display:none" autoplay playsinline></video>
-      <!-- Sharing indicator bar -->
-      <div id="sharing-bar" class="absolute top-0 left-0 right-0 flex items-center justify-center gap-3 py-2 bg-brand/90 text-white text-sm font-medium z-20" style="display:none">
-        <span class="w-2 h-2 rounded-full bg-white animate-pulse"></span>
-        <span id="sharing-text">You are sharing your tab</span>
-        <button id="stopShareBtn" class="bg-white/20 hover:bg-white/30 text-white text-xs font-bold px-3 py-1 rounded transition-all">Stop sharing</button>
-      </div>
       <div id="ext-info" class="empty text-gray-500 text-center px-10 max-w-md hidden">
         <h2 class="text-white text-[1.4rem] font-bold mb-4 mt-0">Extension mode</h2>
         <p class="text-sm text-gray-400 mb-4">Waiting for the browser extension to connect...</p>
