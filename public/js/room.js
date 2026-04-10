@@ -19,7 +19,9 @@ let activeMode = null;     // 'youtube' | 'url' | 'extension' | null
 let suppress = false;      // skip echoing remote-applied events
 let ytPlayer = null;
 let ytReady = false;
-let pendingYoutube = null;
+let pendingYoutube = null; // { value, playback } queued until YT API is ready
+let pendingPlayback = null; // playback to re-apply once YT player can accept it
+let lastLoadedYTId = null;
 let hls = null;
 let memberCache = [];
 
@@ -32,11 +34,18 @@ window.onYouTubeIframeAPIReady = () => {
       onReady: () => {
         ytReady = true;
         if (pendingYoutube) {
-          loadYoutube(pendingYoutube);
+          const p = pendingYoutube;
           pendingYoutube = null;
+          loadYoutube(p.value, p.playback);
         }
       },
       onStateChange: (e) => {
+        // Once the video is actually cued/playing, drain any pending playback sync
+        if ((e.data === YT.PlayerState.CUED || e.data === YT.PlayerState.PLAYING) && pendingPlayback) {
+          const p = pendingPlayback;
+          pendingPlayback = null;
+          setTimeout(() => applyPlayback(p), 100);
+        }
         if (suppress || activeMode !== 'youtube') return;
         if (e.data === YT.PlayerState.PLAYING) {
           broadcastPlayback({ playing: true, currentTime: ytPlayer.getCurrentTime() });
@@ -72,11 +81,36 @@ function extractYoutubeId(url) {
   return url; // assume already an ID
 }
 
-function loadYoutube(value) {
+function loadYoutube(value, playback) {
   const id = extractYoutubeId(value);
   if (!id) return;
-  if (!ytReady) { pendingYoutube = id; return; }
-  ytPlayer.cueVideoById(id);
+  if (!ytReady) {
+    pendingYoutube = { value, playback: playback || null };
+    return;
+  }
+  // If we're already on this video and just need a sync, reuse the player
+  if (id === lastLoadedYTId) {
+    if (playback) applyPlayback(playback);
+    return;
+  }
+  lastLoadedYTId = id;
+
+  if (playback && playback.playing) {
+    // Late joiner catching up to a playing room — load + autoplay at the right offset
+    const drift = (Date.now() - playback.updatedAt) / 1000;
+    const startSec = Math.max(0, (playback.currentTime || 0) + drift);
+    suppress = true;
+    ytPlayer.loadVideoById({ videoId: id, startSeconds: startSec });
+    setTimeout(() => { suppress = false; }, 1500);
+  } else if (playback && !playback.playing) {
+    // Room is paused at a known time — cue at that offset, don't autoplay
+    suppress = true;
+    ytPlayer.cueVideoById({ videoId: id, startSeconds: Math.max(0, playback.currentTime || 0) });
+    setTimeout(() => { suppress = false; }, 1500);
+  } else {
+    // Fresh load by the user who picked the source
+    ytPlayer.cueVideoById(id);
+  }
 }
 
 function loadUrl(url) {
@@ -116,11 +150,16 @@ function broadcastPlayback(state) {
 // ---------- apply remote playback ----------
 function applyPlayback(p) {
   if (!activeMode || activeMode === 'extension') return;
+  // YT not ready yet — stash and re-apply once it is (drained from onStateChange)
+  if (activeMode === 'youtube' && (!ytReady || !ytPlayer)) {
+    pendingPlayback = p;
+    return;
+  }
   const drift = (Date.now() - p.updatedAt) / 1000;
   const target = p.playing ? p.currentTime + drift : p.currentTime;
   suppress = true;
   try {
-    if (activeMode === 'youtube' && ytReady && ytPlayer) {
+    if (activeMode === 'youtube') {
       const cur = ytPlayer.getCurrentTime() || 0;
       if (Math.abs(cur - target) > 1.0) ytPlayer.seekTo(target, true);
       if (p.playing) ytPlayer.playVideo();
@@ -159,10 +198,7 @@ socket.on('room:state', (room) => {
   memberCache = room.members || [];
   renderMembers(memberCache);
   (room.chat || []).forEach(addChatMessage);
-  if (room.source) applySource(room.source);
-  if (room.playback && room.source) {
-    setTimeout(() => applyPlayback(room.playback), 600);
-  }
+  if (room.source) applySource(room.source, room.playback || null);
 });
 
 socket.on('room:member', ({ joined, left }) => {
@@ -184,10 +220,10 @@ function renderMembers(members) {
   });
 }
 
-socket.on('source:change', applySource);
-function applySource(source) {
+socket.on('source:change', (source) => applySource(source, null));
+function applySource(source, playback) {
   setMode(source.type);
-  if (source.type === 'youtube') loadYoutube(source.value);
+  if (source.type === 'youtube') loadYoutube(source.value, playback);
   else if (source.type === 'url') loadUrl(source.value);
   else if (source.type === 'extension') {
     $('#ext-status').textContent = source.title
@@ -233,9 +269,23 @@ const ICE_SERVERS = [
   { urls: 'stun:stun1.l.google.com:19302' }
 ];
 
-let localStream = null;
+let localStream = null;       // what we send to peers (canvas-processed when video is on)
+let rawStream = null;         // what getUserMedia gave us (real camera + mic)
 let inCall = false;
-const peers = new Map(); // remoteSocketId -> RTCPeerConnection
+const peers = new Map();      // remoteSocketId -> RTCPeerConnection
+
+// Beauty filter pipeline (canvas-based, applies to outgoing video)
+const FILTERS = [
+  { name: 'Filter', css: 'none' },
+  { name: 'Soft',   css: 'blur(0.6px) brightness(1.06) contrast(0.96) saturate(1.08)' },
+  { name: 'Glow',   css: 'blur(0.4px) brightness(1.15) saturate(1.22) contrast(1.02)' },
+  { name: 'Dreamy', css: 'blur(1.4px) brightness(1.12) saturate(1.18) hue-rotate(-6deg)' }
+];
+let filterIdx = 0;
+let processCanvas = null;
+let processCtx = null;
+let processVideo = null;
+let processRAF = null;
 
 function nameForId(id) {
   const m = memberCache.find(x => x.id === id);
@@ -246,20 +296,21 @@ async function joinCall() {
   if (inCall) return;
   $('#joinCallBtn').disabled = true;
   try {
-    localStream = await navigator.mediaDevices.getUserMedia({
+    rawStream = await navigator.mediaDevices.getUserMedia({
       audio: true,
       video: { width: { ideal: 320 }, height: { ideal: 240 } }
     });
   } catch (err) {
     // Camera blocked or absent — fall back to audio-only
     try {
-      localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      rawStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (e) {
       $('#joinCallBtn').disabled = false;
       alert('Could not access mic or camera: ' + (e?.message || e));
       return;
     }
   }
+  localStream = setupProcessedStream(rawStream);
   inCall = true;
   addLocalTile();
   socket.emit('call:join');
@@ -274,12 +325,74 @@ function leaveCall() {
   }
   peers.clear();
   document.querySelectorAll('#video-grid .video-tile').forEach(el => el.remove());
-  if (localStream) {
-    localStream.getTracks().forEach(t => t.stop());
-    localStream = null;
+  teardownProcessedStream();
+  if (rawStream) {
+    rawStream.getTracks().forEach(t => t.stop());
+    rawStream = null;
   }
+  localStream = null;
   inCall = false;
+  filterIdx = 0;
   updateCallUI();
+}
+
+// Pipe the camera through a hidden canvas so we can apply CSS filters to the
+// outgoing video track. Audio passes straight through. If there's no video,
+// we just hand back the raw stream.
+function setupProcessedStream(source) {
+  const videoTrack = source.getVideoTracks()[0];
+  if (!videoTrack) return source; // audio-only mode
+
+  const settings = videoTrack.getSettings();
+  const w = settings.width || 320;
+  const h = settings.height || 240;
+
+  processCanvas = document.createElement('canvas');
+  processCanvas.width = w;
+  processCanvas.height = h;
+  processCtx = processCanvas.getContext('2d');
+
+  processVideo = document.createElement('video');
+  processVideo.srcObject = new MediaStream([videoTrack]);
+  processVideo.muted = true;
+  processVideo.playsInline = true;
+  processVideo.play().catch(() => {});
+
+  const draw = () => {
+    if (processVideo && processVideo.readyState >= 2) {
+      processCtx.filter = FILTERS[filterIdx].css;
+      processCtx.drawImage(processVideo, 0, 0, w, h);
+    }
+    processRAF = requestAnimationFrame(draw);
+  };
+  draw();
+
+  const canvasStream = processCanvas.captureStream(30);
+  const out = new MediaStream();
+  canvasStream.getVideoTracks().forEach(t => out.addTrack(t));
+  source.getAudioTracks().forEach(t => out.addTrack(t));
+  return out;
+}
+
+function teardownProcessedStream() {
+  if (processRAF) cancelAnimationFrame(processRAF);
+  processRAF = null;
+  if (processVideo) {
+    try { processVideo.pause(); } catch {}
+    processVideo.srcObject = null;
+    processVideo = null;
+  }
+  processCanvas = null;
+  processCtx = null;
+}
+
+function cycleFilter() {
+  if (!inCall) return;
+  filterIdx = (filterIdx + 1) % FILTERS.length;
+  const f = FILTERS[filterIdx];
+  const btn = $('#filterBtn');
+  btn.textContent = f.name;
+  btn.classList.toggle('on', filterIdx !== 0);
 }
 
 function createPeer(remoteId, isInitiator) {
@@ -417,26 +530,26 @@ function removeRemoteTile(peerId) {
 
 // ---------- mic / cam toggles ----------
 function toggleMic() {
-  if (!localStream) return;
-  const tracks = localStream.getAudioTracks();
+  if (!rawStream) return;
+  const tracks = rawStream.getAudioTracks();
   if (!tracks.length) return;
   const enabled = !tracks[0].enabled;
   tracks.forEach(t => t.enabled = enabled);
   const btn = $('#micBtn');
   btn.classList.toggle('off', !enabled);
-  btn.textContent = enabled ? 'Mic on' : 'Mic off';
+  btn.textContent = enabled ? 'Mic' : 'Mic off';
   document.getElementById('tile-local')?.classList.toggle('muted', !enabled);
 }
 
 function toggleCam() {
-  if (!localStream) return;
-  const tracks = localStream.getVideoTracks();
+  if (!rawStream) return;
+  const tracks = rawStream.getVideoTracks();
   if (!tracks.length) return;
   const enabled = !tracks[0].enabled;
   tracks.forEach(t => t.enabled = enabled);
   const btn = $('#camBtn');
   btn.classList.toggle('off', !enabled);
-  btn.textContent = enabled ? 'Cam on' : 'Cam off';
+  btn.textContent = enabled ? 'Cam' : 'Cam off';
 }
 
 function updateCallUI() {
@@ -444,12 +557,20 @@ function updateCallUI() {
   joinBtn.disabled = false;
   joinBtn.style.display = inCall ? 'none' : 'block';
   $('#callControls').classList.toggle('active', inCall);
+  // reset button labels each time
+  $('#micBtn').textContent = 'Mic';
+  $('#micBtn').classList.remove('off');
+  $('#camBtn').textContent = 'Cam';
+  $('#camBtn').classList.remove('off');
+  $('#filterBtn').textContent = FILTERS[filterIdx].name;
+  $('#filterBtn').classList.toggle('on', filterIdx !== 0);
 }
 
 $('#joinCallBtn').onclick = joinCall;
 $('#leaveCallBtn').onclick = leaveCall;
 $('#micBtn').onclick = toggleMic;
 $('#camBtn').onclick = toggleCam;
+$('#filterBtn').onclick = cycleFilter;
 
 // Clean up on tab close so peers see us leave promptly
 window.addEventListener('beforeunload', () => {

@@ -128,9 +128,11 @@ main { flex: 1; display: flex; min-height: 0; }
 #joinCallBtn:active { transform: translateY(1px); }
 .call-controls {
   display: none;
+  flex-direction: column;
   gap: 6px;
 }
 .call-controls.active { display: flex; }
+.call-row { display: flex; gap: 6px; }
 .call-controls .control {
   flex: 1;
   background: var(--pink-panel);
@@ -141,11 +143,18 @@ main { flex: 1; display: flex; min-height: 0; }
   transition: background 0.15s, opacity 0.15s;
 }
 .call-controls .control:hover { background: var(--pink-border); }
+.call-controls .control.full { width: 100%; flex: none; }
 .call-controls .control.off {
   background: #1f0d16;
   color: #c98aab;
   opacity: 0.75;
   border-color: #4a1f33;
+}
+.call-controls .control.on {
+  background: linear-gradient(135deg, var(--pink), var(--pink-2));
+  border-color: var(--pink);
+  color: white;
+  box-shadow: 0 2px 8px rgba(255, 111, 174, 0.25);
 }
 .call-controls .control.danger {
   background: #7a1f3d;
@@ -179,6 +188,7 @@ main { flex: 1; display: flex; min-height: 0; }
   width: 100%; height: 100%; object-fit: cover; display: block;
   background: #14080f;
 }
+.video-tile.local video { transform: scaleX(-1); }
 .video-tile .tile-label {
   position: absolute;
   bottom: 4px; left: 4px;
