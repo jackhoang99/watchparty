@@ -10,22 +10,17 @@ const autoHint = $('#autoHint');
 const howSection = $('#howSection');
 const formSection = $('#formSection');
 const connectedSection = $('#connectedSection');
-const findMoviesBtn = $('#findMoviesBtn');
-const movieModal = $('#movieModal');
-const movieSearch = $('#movieSearch');
-const movieResults = $('#movieResults');
-const modalClose = $('#modalClose');
-const siteLabel = $('#siteLabel');
+const moviesList = $('#moviesList');
+const moviesLabel = $('#moviesLabel');
+const moviesCount = $('#moviesCount');
 
 let isConnected = false;
-let currentTabUrl = '';
 
 // --- Auto-detect server + room from active tab ---
 async function autoDetect() {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.url) return;
-    currentTabUrl = tab.url;
     const url = new URL(tab.url);
     const roomMatch = url.pathname.match(/^\/r\/([^/]+)$/);
     if (roomMatch) {
@@ -56,18 +51,8 @@ function updateUI(connected, roomId) {
     formSection.style.display = 'none';
     connectedSection.style.display = '';
     howSection.style.display = 'none';
-    autoHint.style.display = 'none';
-    // Update site label
-    getCurrentTab().then(tab => {
-      if (tab?.url) {
-        try {
-          const host = new URL(tab.url).hostname.replace('www.', '');
-          siteLabel.textContent = `Search on ${host}`;
-        } catch {
-          siteLabel.textContent = 'Search on this site';
-        }
-      }
-    });
+    // Auto-crawl current page
+    crawlCurrentPage();
   } else {
     statusDot.className = 'status-dot';
     statusText.textContent = 'Not connected';
@@ -75,6 +60,63 @@ function updateUI(connected, roomId) {
     connectedSection.style.display = 'none';
     howSection.style.display = '';
   }
+}
+
+// --- Auto-crawl current page for movies ---
+async function crawlCurrentPage() {
+  const tab = await getCurrentTab();
+  if (!tab?.id) {
+    moviesList.innerHTML = '<div class="movies-empty">Open a streaming site to see movies</div>';
+    return;
+  }
+
+  // Update label with site name
+  try {
+    const host = new URL(tab.url).hostname.replace('www.', '');
+    moviesLabel.textContent = 'On ' + host;
+  } catch {}
+
+  moviesList.innerHTML = '<div class="movies-loading">Scanning page...</div>';
+
+  try {
+    const response = await chrome.tabs.sendMessage(tab.id, { type: 'scrape-movies' });
+    const movies = response?.movies || [];
+    moviesCount.textContent = movies.length ? movies.length + ' found' : '';
+
+    if (movies.length === 0) {
+      moviesList.innerHTML = '<div class="movies-empty">No movies found on this page</div>';
+      return;
+    }
+
+    moviesList.innerHTML = '';
+    movies.forEach(movie => {
+      const item = document.createElement('div');
+      item.className = 'movie-item';
+      item.innerHTML = `
+        ${movie.poster ? `<img class="movie-poster" src="${esc(movie.poster)}" alt="" onerror="this.style.display='none'">` : '<div class="movie-poster"></div>'}
+        <div class="movie-info">
+          <div class="movie-title">${esc(movie.title)}</div>
+          ${movie.meta ? `<div class="movie-meta">${esc(movie.meta)}</div>` : ''}
+        </div>
+        <button class="movie-go">Watch</button>
+      `;
+      const go = () => {
+        chrome.tabs.update(tab.id, { url: movie.url });
+        window.close();
+      };
+      item.querySelector('.movie-go').onclick = (e) => { e.stopPropagation(); go(); };
+      item.onclick = go;
+      moviesList.appendChild(item);
+    });
+  } catch {
+    moviesList.innerHTML = '<div class="movies-empty">Could not scan — try refreshing the page</div>';
+  }
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
 }
 
 // --- Refresh from background ---
@@ -133,87 +175,5 @@ disconnectBtn.onclick = async () => {
 
 roomInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !isConnected) connectBtn.click(); });
 serverInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !isConnected) connectBtn.click(); });
-
-// ============================
-// Find movies — crawl current page for all movie links
-// ============================
-let allMovies = []; // scraped from current page
-
-findMoviesBtn.onclick = async () => {
-  movieModal.classList.add('open');
-  movieSearch.value = '';
-  movieSearch.focus();
-  movieResults.innerHTML = '<div class="modal-loading">Scanning page for movies...</div>';
-
-  // Ask content script to scrape the current page
-  const tab = await getCurrentTab();
-  if (!tab?.id) {
-    movieResults.innerHTML = '<div class="modal-empty">Open a streaming site first</div>';
-    return;
-  }
-
-  try {
-    const response = await chrome.tabs.sendMessage(tab.id, { type: 'scrape-movies' });
-    allMovies = response?.movies || [];
-    if (allMovies.length === 0) {
-      movieResults.innerHTML = '<div class="modal-empty">No movies found on this page</div>';
-    } else {
-      renderResults(allMovies);
-    }
-  } catch {
-    movieResults.innerHTML = '<div class="modal-empty">Could not scan this page — try refreshing</div>';
-  }
-};
-
-modalClose.onclick = () => movieModal.classList.remove('open');
-
-// Filter as user types
-movieSearch.addEventListener('input', () => {
-  const q = movieSearch.value.trim().toLowerCase();
-  if (!q) {
-    renderResults(allMovies);
-    return;
-  }
-  const filtered = allMovies.filter(m => m.title.toLowerCase().includes(q));
-  renderResults(filtered);
-});
-
-movieSearch.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') movieModal.classList.remove('open');
-});
-
-function renderResults(results) {
-  if (results.length === 0) {
-    movieResults.innerHTML = '<div class="modal-empty">No matches</div>';
-    return;
-  }
-  movieResults.innerHTML = '';
-  results.forEach(movie => {
-    const item = document.createElement('div');
-    item.className = 'movie-item';
-    item.innerHTML = `
-      ${movie.poster ? `<img class="movie-poster" src="${escHtml(movie.poster)}" alt="" onerror="this.style.display='none'">` : '<div class="movie-poster" style="background:#1a1a1a"></div>'}
-      <div class="movie-info">
-        <div class="movie-title">${escHtml(movie.title)}</div>
-        ${movie.meta ? `<div class="movie-year">${escHtml(movie.meta)}</div>` : ''}
-      </div>
-      <button class="movie-send">Watch</button>
-    `;
-    const go = () => {
-      chrome.tabs.update({ url: movie.url });
-      movieModal.classList.remove('open');
-      window.close();
-    };
-    item.querySelector('.movie-send').onclick = (e) => { e.stopPropagation(); go(); };
-    item.onclick = go;
-    movieResults.appendChild(item);
-  });
-}
-
-function escHtml(s) {
-  const d = document.createElement('div');
-  d.textContent = s;
-  return d.innerHTML;
-}
 
 refresh();
