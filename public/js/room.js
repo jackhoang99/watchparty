@@ -343,25 +343,43 @@ function setupProcessedStream(source) {
   const videoTrack = source.getVideoTracks()[0];
   if (!videoTrack) return source; // audio-only mode
 
-  const settings = videoTrack.getSettings();
-  const w = settings.width || 320;
-  const h = settings.height || 240;
-
   processCanvas = document.createElement('canvas');
-  processCanvas.width = w;
-  processCanvas.height = h;
   processCtx = processCanvas.getContext('2d');
+  // Best-guess initial size from track settings — overwritten once metadata loads
+  const settings = videoTrack.getSettings();
+  processCanvas.width = settings.width || 320;
+  processCanvas.height = settings.height || 240;
 
   processVideo = document.createElement('video');
   processVideo.srcObject = new MediaStream([videoTrack]);
   processVideo.muted = true;
   processVideo.playsInline = true;
+
+  // The truth about the displayed dimensions (post-rotation on mobile) lives on
+  // the <video> element, not on the track. Snap the canvas to match whenever it
+  // changes — once on first load, and again on rotation/resize.
+  const syncCanvasSize = () => {
+    if (!processVideo) return;
+    const vw = processVideo.videoWidth;
+    const vh = processVideo.videoHeight;
+    if (vw && vh && (processCanvas.width !== vw || processCanvas.height !== vh)) {
+      processCanvas.width = vw;
+      processCanvas.height = vh;
+    }
+  };
+  processVideo.addEventListener('loadedmetadata', syncCanvasSize);
+  processVideo.addEventListener('resize', syncCanvasSize);
   processVideo.play().catch(() => {});
 
   const draw = () => {
     if (processVideo && processVideo.readyState >= 2) {
+      // In case loadedmetadata never fired (some browsers), keep trying
+      if (processCanvas.width !== processVideo.videoWidth ||
+          processCanvas.height !== processVideo.videoHeight) {
+        syncCanvasSize();
+      }
       processCtx.filter = FILTERS[filterIdx].css;
-      processCtx.drawImage(processVideo, 0, 0, w, h);
+      processCtx.drawImage(processVideo, 0, 0, processCanvas.width, processCanvas.height);
     }
     processRAF = requestAnimationFrame(draw);
   };
