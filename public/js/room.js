@@ -95,22 +95,25 @@ function loadYoutube(value, playback) {
   }
   lastLoadedYTId = id;
 
+  // Hard-reset the player so any prior end-screen overlay / state is cleared.
+  // Without this, cueing a new video while the previous one is in ENDED state
+  // leaves the recommendations overlay stuck on top of the new video.
+  suppress = true;
+  try { ytPlayer.stopVideo(); } catch {}
+
   if (playback && playback.playing) {
     // Late joiner catching up to a playing room — load + autoplay at the right offset
     const drift = (Date.now() - playback.updatedAt) / 1000;
     const startSec = Math.max(0, (playback.currentTime || 0) + drift);
-    suppress = true;
     ytPlayer.loadVideoById({ videoId: id, startSeconds: startSec });
-    setTimeout(() => { suppress = false; }, 1500);
   } else if (playback && !playback.playing) {
     // Room is paused at a known time — cue at that offset, don't autoplay
-    suppress = true;
     ytPlayer.cueVideoById({ videoId: id, startSeconds: Math.max(0, playback.currentTime || 0) });
-    setTimeout(() => { suppress = false; }, 1500);
   } else {
     // Fresh load by the user who picked the source
     ytPlayer.cueVideoById(id);
   }
+  setTimeout(() => { suppress = false; }, 1500);
 }
 
 function loadUrl(url) {
