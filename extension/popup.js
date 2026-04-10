@@ -88,22 +88,63 @@ async function crawlCurrentPage() {
   let host;
   try { host = new URL(tab.url).hostname.replace('www.', ''); } catch { return; }
 
-  // If we're on a video page, show send options
+  // If we're on a video page, show mode choice + send options
   if (isMoviePage(tab.url)) {
     moviesLabel.textContent = tab.title || 'Video page';
     moviesCount.textContent = '';
 
-    // Collect URLs: start with the page URL itself, then add detected streams
-    const allUrls = [];
+    // Mode selector + video sources
+    moviesList.innerHTML = `
+      <div style="padding: 8px 8px 0;">
+        <!-- Sync Mode option (always available) -->
+        <div id="syncModeCard" style="
+          background: #0c0c0c; border: 1px solid #333; border-radius: 8px;
+          padding: 12px; margin-bottom: 10px; cursor: default;
+        ">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+            <div style="display:flex;align-items:center;gap:6px;">
+              <div style="background:#22c55e;color:#fff;font-size:8px;font-weight:800;padding:2px 5px;border-radius:3px;letter-spacing:0.5px;">SYNC</div>
+              <span style="font-size:12px;font-weight:600;color:#eee;">Sync Mode</span>
+            </div>
+            <button id="activateSyncBtn" style="
+              background:#22c55e;color:#fff;border:0;border-radius:5px;
+              padding:5px 12px;font-size:10px;font-weight:700;cursor:pointer;
+            ">Activate</button>
+          </div>
+          <p style="font-size:10px;color:#888;line-height:1.4;margin:0;">
+            Everyone opens this same page with the extension. Play/pause/seek syncs automatically across all browsers.
+          </p>
+        </div>
 
-    // For YouTube/Vimeo — the page URL IS the video
+        <!-- Direct mode header -->
+        <div style="font-size:9px;color:#666;text-transform:uppercase;letter-spacing:0.8px;font-weight:600;margin-bottom:6px;padding-left:2px;">
+          Or send video URL to room
+        </div>
+      </div>
+      <div id="urlList"></div>
+    `;
+
+    // Sync mode button — just confirm it's active, stay on this page
+    document.getElementById('activateSyncBtn').onclick = () => {
+      const btn = document.getElementById('activateSyncBtn');
+      const card = document.getElementById('syncModeCard');
+      btn.textContent = 'Active';
+      btn.style.background = '#16a34a';
+      btn.disabled = true;
+      card.style.borderColor = '#22c55e';
+      card.querySelector('p').textContent = 'Sync is active! Play the video — everyone connected to this room will stay in sync. Keep the watchparty room open in another tab for chat.';
+    };
+
+    // Collect direct URLs
+    const allUrls = [];
+    const urlListEl = document.getElementById('urlList');
+
     const isYT = /youtube\.com\/watch|youtu\.be\//i.test(tab.url);
     const isVimeo = /vimeo\.com\/\d/i.test(tab.url);
     if (isYT || isVimeo) {
       allUrls.push({ url: tab.url, source: isYT ? 'YouTube video' : 'Vimeo video', typeLabel: isYT ? 'YT' : 'Video', typeColor: '#e50914' });
     }
 
-    // Also try to get detected stream URLs from content script
     try {
       const resp = await chrome.tabs.sendMessage(tab.id, { type: 'get-all-video-urls' });
       if (resp?.urls) {
@@ -121,12 +162,10 @@ async function crawlCurrentPage() {
     } catch {}
 
     if (allUrls.length === 0) {
-      moviesList.innerHTML = '<div class="movies-empty">No video detected — try playing the video first</div>';
-      return;
-    }
-
-    moviesCount.textContent = allUrls.length + ' source' + (allUrls.length > 1 ? 's' : '');
-    moviesList.innerHTML = '';
+      urlListEl.innerHTML = '<div class="movies-empty" style="padding:8px 16px;font-size:10px;">No direct video URLs found — use Sync Mode above</div>';
+    } else {
+      moviesCount.textContent = allUrls.length + ' source' + (allUrls.length > 1 ? 's' : '');
+      urlListEl.innerHTML = '';
 
     allUrls.forEach(entry => {
       const item = document.createElement('div');
@@ -181,8 +220,9 @@ async function crawlCurrentPage() {
         }
       };
 
-      moviesList.appendChild(item);
+      urlListEl.appendChild(item);
     });
+    }
     return;
   }
 

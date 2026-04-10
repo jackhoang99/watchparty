@@ -63,80 +63,8 @@
     return null;
   }
 
-  // --- Create the floating button ---
-  function createButton() {
-    if (button || !isAlive()) return;
-    button = document.createElement('div');
-    button.innerHTML = `
-      <div style="
-        position: fixed; bottom: 24px; right: 24px; z-index: 2147483647;
-        display: flex; align-items: center; gap: 8px;
-        background: #e50914; color: white;
-        font-family: -apple-system, system-ui, sans-serif;
-        font-size: 14px; font-weight: 700;
-        padding: 12px 20px; border-radius: 12px;
-        cursor: pointer; user-select: none;
-        box-shadow: 0 4px 20px rgba(229,9,20,0.4), 0 2px 8px rgba(0,0,0,0.3);
-        transition: transform 0.15s, box-shadow 0.15s;
-        line-height: 1;
-      " id="wp-send-btn">
-        <svg width="20" height="20" viewBox="0 0 48 46" style="flex-shrink:0">
-          <path d="M13 24 L16 43 L32 43 L35 24 Z" fill="white" opacity="0.9"/>
-          <circle cx="19" cy="21" r="4" fill="#e50914"/><circle cx="29" cy="21" r="4" fill="#e50914"/>
-          <circle cx="24" cy="20" r="4.5" fill="#e50914"/><circle cx="24" cy="14" r="3" fill="#e50914"/>
-        </svg>
-        Watch in party
-      </div>
-    `;
-    document.body.appendChild(button);
-
-    const btn = button.querySelector('#wp-send-btn');
-    btn.addEventListener('mouseenter', () => {
-      btn.style.transform = 'scale(1.05)';
-      btn.style.boxShadow = '0 6px 28px rgba(229,9,20,0.5), 0 4px 12px rgba(0,0,0,0.4)';
-    });
-    btn.addEventListener('mouseleave', () => {
-      btn.style.transform = 'scale(1)';
-      btn.style.boxShadow = '0 4px 20px rgba(229,9,20,0.4), 0 2px 8px rgba(0,0,0,0.3)';
-    });
-    btn.addEventListener('click', sendToRoom);
-  }
-
   function removeButton() {
     if (button) { button.remove(); button = null; }
-  }
-
-  // --- Send video URL to the room ---
-  async function sendToRoom() {
-    if (!isAlive()) return;
-    const url = currentVideo ? getVideoUrl(currentVideo) : null;
-    if (!url) {
-      showFeedback('No playable URL found', false);
-      return;
-    }
-
-    try {
-      await safeSend({
-        type: 'send-to-room',
-        url: url,
-        title: document.title
-      });
-      showFeedback('Sent to room!', true);
-    } catch (e) {
-      showFeedback('Not connected to a room', false);
-    }
-  }
-
-  function showFeedback(text, success) {
-    const btn = button?.querySelector('#wp-send-btn');
-    if (!btn) return;
-    const orig = btn.innerHTML;
-    btn.style.background = success ? '#22c55e' : '#666';
-    btn.innerHTML = `<span>${text}</span>`;
-    setTimeout(() => {
-      btn.style.background = '#e50914';
-      btn.innerHTML = orig;
-    }, 2000);
   }
 
   // --- Auto-send: if popup navigated us here, auto-send once video is found ---
@@ -177,13 +105,7 @@
     // Check if we're connected to a room
     safeSend({ type: 'get-status' }).then(status => {
       if (status?.connected) {
-        const url = getVideoUrl(video);
-        if (url || capturedUrls.size > 0) {
-          createButton();
-          tryAutoSend();
-        }
-      } else {
-        removeButton();
+        tryAutoSend();
       }
     }).catch(() => {});
   }
