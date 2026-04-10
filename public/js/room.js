@@ -434,7 +434,12 @@ $('#chat-form').onsubmit = (e) => {
 // ---------- WebRTC voice + video call ----------
 const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' }
+  { urls: 'stun:stun1.l.google.com:19302' },
+  // Free TURN relays (Metered.ca open TURN servers)
+  { urls: 'turn:a.relay.metered.ca:80', username: 'e8dd65b92ed8cd8c3bc4ceee', credential: 'xJP4sDh+Q0GZbOhd' },
+  { urls: 'turn:a.relay.metered.ca:80?transport=tcp', username: 'e8dd65b92ed8cd8c3bc4ceee', credential: 'xJP4sDh+Q0GZbOhd' },
+  { urls: 'turn:a.relay.metered.ca:443', username: 'e8dd65b92ed8cd8c3bc4ceee', credential: 'xJP4sDh+Q0GZbOhd' },
+  { urls: 'turns:a.relay.metered.ca:443', username: 'e8dd65b92ed8cd8c3bc4ceee', credential: 'xJP4sDh+Q0GZbOhd' },
 ];
 
 let localStream = null;       // what we send to peers (canvas-processed when video is on)
@@ -504,16 +509,21 @@ function leaveCall() {
   updateCallUI();
 }
 
-// Pipe the camera through a hidden canvas so we can apply CSS filters to the
-// outgoing video track. Audio passes straight through. If there's no video,
-// we just hand back the raw stream.
+// When no filter is active, use the raw camera stream directly (no canvas).
+// This prevents freezing when the tab goes to background (rAF gets throttled).
+// Canvas pipeline is only created when a beauty filter is activated.
 function setupProcessedStream(source) {
-  const videoTrack = source.getVideoTracks()[0];
-  if (!videoTrack) return source; // audio-only mode
+  // No filter — just pass through the raw stream
+  return source;
+}
+
+function startCanvasPipeline() {
+  if (!rawStream) return;
+  const videoTrack = rawStream.getVideoTracks()[0];
+  if (!videoTrack) return;
 
   processCanvas = document.createElement('canvas');
   processCtx = processCanvas.getContext('2d');
-  // Best-guess initial size from track settings — overwritten once metadata loads
   const settings = videoTrack.getSettings();
   processCanvas.width = settings.width || 320;
   processCanvas.height = settings.height || 240;
@@ -523,9 +533,6 @@ function setupProcessedStream(source) {
   processVideo.muted = true;
   processVideo.playsInline = true;
 
-  // The truth about the displayed dimensions (post-rotation on mobile) lives on
-  // the <video> element, not on the track. Snap the canvas to match whenever it
-  // changes — once on first load, and again on rotation/resize.
   const syncCanvasSize = () => {
     if (!processVideo) return;
     const vw = processVideo.videoWidth;
@@ -541,7 +548,6 @@ function setupProcessedStream(source) {
 
   const draw = () => {
     if (processVideo && processVideo.readyState >= 2) {
-      // In case loadedmetadata never fired (some browsers), keep trying
       if (processCanvas.width !== processVideo.videoWidth ||
           processCanvas.height !== processVideo.videoHeight) {
         syncCanvasSize();
@@ -554,10 +560,43 @@ function setupProcessedStream(source) {
   draw();
 
   const canvasStream = processCanvas.captureStream(30);
-  const out = new MediaStream();
-  canvasStream.getVideoTracks().forEach(t => out.addTrack(t));
-  source.getAudioTracks().forEach(t => out.addTrack(t));
-  return out;
+  localStream = new MediaStream();
+  canvasStream.getVideoTracks().forEach(t => localStream.addTrack(t));
+  rawStream.getAudioTracks().forEach(t => localStream.addTrack(t));
+
+  // Replace the video track in all active peer connections
+  const newVideoTrack = localStream.getVideoTracks()[0];
+  for (const [, pc] of peers) {
+    const sender = pc.getSenders().find(s => s.track?.kind === 'video');
+    if (sender && newVideoTrack) sender.replaceTrack(newVideoTrack).catch(() => {});
+  }
+
+  // Update local tile
+  const localTile = document.getElementById('tile-local');
+  if (localTile) {
+    const vid = localTile.querySelector('video');
+    if (vid) vid.srcObject = localStream;
+  }
+}
+
+function stopCanvasPipeline() {
+  teardownProcessedStream();
+  if (!rawStream) return;
+
+  localStream = rawStream;
+
+  // Replace tracks back to raw
+  const rawVideoTrack = rawStream.getVideoTracks()[0];
+  for (const [, pc] of peers) {
+    const sender = pc.getSenders().find(s => s.track?.kind === 'video');
+    if (sender && rawVideoTrack) sender.replaceTrack(rawVideoTrack).catch(() => {});
+  }
+
+  const localTile = document.getElementById('tile-local');
+  if (localTile) {
+    const vid = localTile.querySelector('video');
+    if (vid) vid.srcObject = localStream;
+  }
 }
 
 function teardownProcessedStream() {
@@ -579,6 +618,14 @@ function cycleFilter() {
   const label = $('#filterBtn .filter-label');
   if (label) label.textContent = f.name;
   $('#filterBtn').classList.toggle('on', filterIdx !== 0);
+
+  // Start or stop canvas pipeline based on filter
+  if (filterIdx === 0) {
+    stopCanvasPipeline();
+  } else if (!processCanvas) {
+    startCanvasPipeline();
+  }
+  // If canvas is already running, the draw loop picks up the new filterIdx automatically
 }
 
 function createPeer(remoteId, isInitiator) {
@@ -813,5 +860,74 @@ document.addEventListener('visibilitychange', () => {
   applyTheme(localStorage.getItem('wp.theme') === 'light');
 
   toggle.onclick = () => applyTheme(!document.body.classList.contains('light'));
+})();
+
+// ---------- Virtual browser (Hyperbeam) ----------
+(function() {
+  const vbFrame = document.getElementById('vbrowser-frame');
+  const vbBar = document.getElementById('vbrowser-bar');
+  const vbStop = document.getElementById('vbrowser-stop');
+  const startBtn = document.getElementById('startVbrowserBtn');
+  const urlInput = document.getElementById('vbrowserUrlInput');
+  if (!startBtn || !vbFrame) return;
+
+  function showVbrowser(embedUrl) {
+    vbFrame.src = embedUrl;
+    vbFrame.style.display = 'block';
+    vbBar.style.display = 'flex';
+    emptyEl.style.display = 'none';
+    ytWrap.style.display = 'none';
+    nativeEl.style.display = 'none';
+    hideVideoError();
+  }
+
+  function hideVbrowser() {
+    vbFrame.src = '';
+    vbFrame.style.display = 'none';
+    vbBar.style.display = 'none';
+    if (!activeMode) emptyEl.style.display = 'flex';
+  }
+
+  // Start virtual browser
+  startBtn.onclick = () => {
+    const url = urlInput.value.trim() || 'https://google.com';
+    startBtn.textContent = 'Launching...';
+    startBtn.disabled = true;
+    socket.emit('vbrowser:start', { url });
+  };
+
+  urlInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') startBtn.click();
+  });
+
+  // Stop virtual browser
+  vbStop.onclick = () => {
+    socket.emit('vbrowser:stop');
+  };
+
+  // Server events
+  socket.on('vbrowser:started', (data) => {
+    showVbrowser(data.embedUrl);
+    startBtn.textContent = 'Launch';
+    startBtn.disabled = false;
+  });
+
+  socket.on('vbrowser:stopped', () => {
+    hideVbrowser();
+  });
+
+  socket.on('vbrowser:error', ({ message }) => {
+    startBtn.textContent = 'Launch';
+    startBtn.disabled = false;
+    alert('Virtual browser error: ' + message);
+  });
+
+  // Late joiner — check if a vbrowser session is already active
+  const origRoomState = socket.listeners('room:state');
+  socket.on('room:state', (room) => {
+    if (room.vbrowser?.embedUrl) {
+      showVbrowser(room.vbrowser.embedUrl);
+    }
+  });
 })();
 

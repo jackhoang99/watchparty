@@ -183,6 +183,18 @@
   <main class="flex flex-1 min-h-0">
     <!-- Player area -->
     <section class="player-area flex-1 bg-black relative flex items-center justify-center min-w-0">
+
+      <!-- Virtual browser (Hyperbeam embed) -->
+      <iframe id="vbrowser-frame" class="absolute inset-0 w-full h-full z-10 border-0" style="display:none" allow="autoplay; clipboard-write; fullscreen"></iframe>
+      <div id="vbrowser-bar" class="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-4 py-2 bg-black/80 backdrop-blur text-white text-sm" style="display:none">
+        <div class="flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+          <span class="font-medium">Virtual browser</span>
+          <span class="text-gray-500 text-xs">— everyone sees the same screen</span>
+        </div>
+        <button id="vbrowser-stop" class="bg-white/10 hover:bg-white/20 text-white text-xs font-semibold px-3 py-1.5 rounded transition-all">End session</button>
+      </div>
+
       <!-- Empty state: shows contextual card based on source type -->
       <div id="player-empty" class="empty flex items-center justify-center px-8 w-full animate-fade-in">
 
@@ -251,19 +263,19 @@
               </div>
             </div>
 
-            <!-- How to use after install -->
-            <div class="text-left max-w-md mx-auto">
-              <div class="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-3">After installing</div>
-              <div class="grid grid-cols-2 gap-3">
-                <div class="bg-[#0c0c0c] border border-gray-800 rounded-lg p-4">
-                  <div class="text-xs text-brand font-bold mb-1">YouTube / Direct URLs</div>
-                  <p class="text-[11px] text-gray-500 leading-relaxed">Send a video from the extension popup — everyone watches it here in the room</p>
-                </div>
-                <div class="bg-[#0c0c0c] border border-gray-800 rounded-lg p-4">
-                  <div class="text-xs text-brand font-bold mb-1">Fshare / Netflix / etc.</div>
-                  <p class="text-[11px] text-gray-500 leading-relaxed">Everyone opens the same movie — the extension syncs play/pause/seek automatically</p>
-                </div>
+            <!-- Virtual browser -->
+            <div class="text-left max-w-md mx-auto mt-2">
+              <div class="text-[10px] text-green-500 font-bold uppercase tracking-wider mb-3">Or launch a virtual browser</div>
+              <p class="text-xs text-gray-500 mb-3">Share a real browser with everyone — one person browses, everyone sees the same screen. No extension needed for viewers.</p>
+              <div class="flex gap-2">
+                <input id="vbrowserUrlInput" placeholder="https://fsharetv.com" autocomplete="off"
+                       class="flex-1 bg-[#0c0c0c] border border-gray-700 text-white text-xs px-3 py-2.5 rounded-lg placeholder:text-gray-600 focus:outline-none focus:border-green-500">
+                <button id="startVbrowserBtn"
+                        class="bg-green-600 hover:bg-green-500 text-white text-xs font-bold px-4 py-2.5 rounded-lg transition-all shrink-0">
+                  Launch
+                </button>
               </div>
+              <p class="text-[10px] text-gray-600 mt-2">Powered by Hyperbeam — everyone can control the browser</p>
             </div>
           </div>
         </div>

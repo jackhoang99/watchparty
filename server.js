@@ -61,6 +61,7 @@ function serializeRoom(room) {
     id: room.id,
     members: Array.from(room.members.values()).map(m => ({ id: m.id, name: m.name, color: m.color })),
     callMembers: Array.from(room.callMembers || []),
+    vbrowser: room.vbrowser || null,
     source: room.source,
     playback: room.playback,
     chat: room.chat
@@ -183,6 +184,39 @@ io.on('connection', (socket) => {
       updatedAt: Date.now()
     };
     broadcastPlayback(currentRoomId, room.playback, socket.id);
+  });
+
+  // Virtual browser — create a shared browsing session via Hyperbeam
+  socket.on('vbrowser:start', async ({ url }) => {
+    if (!currentRoomId) return;
+    const room = rooms.get(currentRoomId);
+    if (!room) return;
+    const apiKey = process.env.HYPERBEAM_API_KEY;
+    if (!apiKey) {
+      socket.emit('vbrowser:error', { message: 'Virtual browser not configured — set HYPERBEAM_API_KEY' });
+      return;
+    }
+    try {
+      const resp = await fetch('https://engine.hyperbeam.com/v0/vm', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ start_url: url || 'https://google.com' })
+      });
+      if (!resp.ok) throw new Error('Hyperbeam API error: ' + resp.status);
+      const data = await resp.json();
+      room.vbrowser = { embedUrl: data.embed_url, sessionId: data.session_id, startedBy: socket.id };
+      io.to(currentRoomId).emit('vbrowser:started', room.vbrowser);
+    } catch (err) {
+      socket.emit('vbrowser:error', { message: err.message || 'Failed to create virtual browser' });
+    }
+  });
+
+  socket.on('vbrowser:stop', () => {
+    if (!currentRoomId) return;
+    const room = rooms.get(currentRoomId);
+    if (!room) return;
+    room.vbrowser = null;
+    io.to(currentRoomId).emit('vbrowser:stopped');
   });
 
   socket.on('sourceType:change', ({ type }) => {
