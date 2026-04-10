@@ -538,7 +538,9 @@ function setupProcessedStream(source) {
   processVideo.addEventListener('resize', syncCanvasSize);
   processVideo.play().catch(() => {});
 
-  const draw = () => {
+  // Use setInterval instead of requestAnimationFrame so it keeps running
+  // when the tab is in the background (rAF gets throttled to ~1fps)
+  processRAF = setInterval(() => {
     if (processVideo && processVideo.readyState >= 2) {
       if (processCanvas.width !== processVideo.videoWidth ||
           processCanvas.height !== processVideo.videoHeight) {
@@ -547,9 +549,7 @@ function setupProcessedStream(source) {
       processCtx.filter = FILTERS[filterIdx].css;
       processCtx.drawImage(processVideo, 0, 0, processCanvas.width, processCanvas.height);
     }
-    processRAF = requestAnimationFrame(draw);
-  };
-  draw();
+  }, 33); // ~30fps
 
   const canvasStream = processCanvas.captureStream(30);
   const out = new MediaStream();
@@ -559,7 +559,7 @@ function setupProcessedStream(source) {
 }
 
 function teardownProcessedStream() {
-  if (processRAF) cancelAnimationFrame(processRAF);
+  if (processRAF) clearInterval(processRAF);
   processRAF = null;
   if (processVideo) {
     try { processVideo.pause(); } catch {}

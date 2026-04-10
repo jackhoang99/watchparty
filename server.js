@@ -150,25 +150,37 @@ function maybeReap(roomId) {
 // ---------- HTTP routes ----------
 // TURN credentials endpoint — generates fresh credentials from Cloudflare TURN
 app.get('/api/turn', async (req, res) => {
-  const apiKey = process.env.CLOUDFLARE_TURN_KEY;
-  if (!apiKey) {
-    return res.json([
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' }
-    ]);
+  // Option 1: Metered TURN API (recommended — free 500GB/month)
+  const meteredKey = process.env.METERED_API_KEY;
+  if (meteredKey) {
+    try {
+      const appName = process.env.METERED_APP_NAME || 'watchparty';
+      const r = await apiFetch(`https://${appName}.metered.live/api/v1/turn/credentials?apiKey=${meteredKey}`, {});
+      const creds = await r.json();
+      if (Array.isArray(creds) && creds.length) return res.json(creds);
+    } catch {}
   }
-  try {
-    const r = await apiFetch('https://rtc.live.cloudflare.com/v1/turn/keys/' + apiKey + '/credentials/generate', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ttl: 86400 })
-    });
-    const data = await r.json();
-    if (data.iceServers) {
-      res.json(data.iceServers);
-    } else {
-      res.json([{ urls: 'stun:stun.l.google.com:19302' }]);
-    }
+
+  // Option 2: Cloudflare TURN
+  const cfToken = process.env.CLOUDFLARE_TURN_TOKEN;
+  const cfKeyId = process.env.CLOUDFLARE_TURN_KEY_ID;
+  if (cfToken && cfKeyId) {
+    try {
+      const r = await apiFetch('https://rtc.live.cloudflare.com/v1/turn/keys/' + cfKeyId + '/credentials/generate', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + cfToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ttl: 86400 })
+      });
+      const data = await r.json();
+      if (data.iceServers) return res.json(data.iceServers);
+    } catch {}
+  }
+
+  // Fallback: STUN only (works ~85% of the time, fails cross-country)
+  res.json([
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' }
+  ]);
   } catch {
     res.json([{ urls: 'stun:stun.l.google.com:19302' }]);
   }
