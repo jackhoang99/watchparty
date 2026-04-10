@@ -226,3 +226,232 @@ $('#chat-form').onsubmit = (e) => {
   socket.emit('chat:message', { text });
   input.value = '';
 };
+
+// ---------- WebRTC voice + video call ----------
+const ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' }
+];
+
+let localStream = null;
+let inCall = false;
+const peers = new Map(); // remoteSocketId -> RTCPeerConnection
+
+function nameForId(id) {
+  const m = memberCache.find(x => x.id === id);
+  return m ? m.name : 'guest';
+}
+
+async function joinCall() {
+  if (inCall) return;
+  $('#joinCallBtn').disabled = true;
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({
+      audio: true,
+      video: { width: { ideal: 320 }, height: { ideal: 240 } }
+    });
+  } catch (err) {
+    // Camera blocked or absent — fall back to audio-only
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      $('#joinCallBtn').disabled = false;
+      alert('Could not access mic or camera: ' + (e?.message || e));
+      return;
+    }
+  }
+  inCall = true;
+  addLocalTile();
+  socket.emit('call:join');
+  updateCallUI();
+}
+
+function leaveCall() {
+  if (!inCall) return;
+  socket.emit('call:leave');
+  for (const [, pc] of peers) {
+    try { pc.close(); } catch {}
+  }
+  peers.clear();
+  document.querySelectorAll('#video-grid .video-tile').forEach(el => el.remove());
+  if (localStream) {
+    localStream.getTracks().forEach(t => t.stop());
+    localStream = null;
+  }
+  inCall = false;
+  updateCallUI();
+}
+
+function createPeer(remoteId, isInitiator) {
+  const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+  peers.set(remoteId, pc);
+
+  if (localStream) {
+    localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+  }
+
+  pc.onicecandidate = (e) => {
+    if (e.candidate) {
+      socket.emit('webrtc:signal', {
+        to: remoteId,
+        signal: { type: 'ice', candidate: e.candidate }
+      });
+    }
+  };
+
+  pc.ontrack = (e) => {
+    addRemoteTile(remoteId, e.streams[0]);
+  };
+
+  pc.onconnectionstatechange = () => {
+    if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+      removeRemoteTile(remoteId);
+      peers.delete(remoteId);
+    }
+  };
+
+  if (isInitiator) {
+    (async () => {
+      try {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        socket.emit('webrtc:signal', {
+          to: remoteId,
+          signal: { type: 'offer', sdp: pc.localDescription }
+        });
+      } catch (err) {
+        console.warn('createOffer failed', err);
+      }
+    })();
+  }
+
+  return pc;
+}
+
+socket.on('call:peer-joined', ({ id }) => {
+  if (!inCall || id === socket.id) return;
+  // I'm an existing call member; the new joiner needs an offer from me
+  createPeer(id, true);
+});
+
+socket.on('call:peer-left', ({ id }) => {
+  const pc = peers.get(id);
+  if (pc) { try { pc.close(); } catch {} }
+  peers.delete(id);
+  removeRemoteTile(id);
+});
+
+socket.on('webrtc:signal', async ({ from, signal }) => {
+  if (!inCall) return;
+  let pc = peers.get(from);
+  if (!pc) {
+    // Receiving an offer from a peer we don't yet know about — answer side
+    pc = createPeer(from, false);
+  }
+  try {
+    if (signal.type === 'offer') {
+      await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      socket.emit('webrtc:signal', {
+        to: from,
+        signal: { type: 'answer', sdp: pc.localDescription }
+      });
+    } else if (signal.type === 'answer') {
+      await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+    } else if (signal.type === 'ice') {
+      await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+    }
+  } catch (err) {
+    console.warn('signal handling failed', err);
+  }
+});
+
+// ---------- video tiles ----------
+function addLocalTile() {
+  const existing = document.getElementById('tile-local');
+  if (existing) existing.remove();
+  const tile = document.createElement('div');
+  tile.className = 'video-tile local';
+  tile.id = 'tile-local';
+  const video = document.createElement('video');
+  video.autoplay = true;
+  video.muted = true; // never play your own audio back to yourself
+  video.playsInline = true;
+  video.srcObject = localStream;
+  const label = document.createElement('div');
+  label.className = 'tile-label';
+  label.textContent = 'You';
+  const mutedTag = document.createElement('div');
+  mutedTag.className = 'tile-muted';
+  mutedTag.textContent = 'muted';
+  tile.append(video, label, mutedTag);
+  $('#video-grid').appendChild(tile);
+}
+
+function addRemoteTile(peerId, stream) {
+  let tile = document.getElementById('tile-' + peerId);
+  if (tile) {
+    const video = tile.querySelector('video');
+    if (video.srcObject !== stream) video.srcObject = stream;
+    return;
+  }
+  tile = document.createElement('div');
+  tile.className = 'video-tile';
+  tile.id = 'tile-' + peerId;
+  const video = document.createElement('video');
+  video.autoplay = true;
+  video.playsInline = true;
+  video.srcObject = stream;
+  const label = document.createElement('div');
+  label.className = 'tile-label';
+  label.textContent = nameForId(peerId);
+  tile.append(video, label);
+  $('#video-grid').appendChild(tile);
+}
+
+function removeRemoteTile(peerId) {
+  const t = document.getElementById('tile-' + peerId);
+  if (t) t.remove();
+}
+
+// ---------- mic / cam toggles ----------
+function toggleMic() {
+  if (!localStream) return;
+  const tracks = localStream.getAudioTracks();
+  if (!tracks.length) return;
+  const enabled = !tracks[0].enabled;
+  tracks.forEach(t => t.enabled = enabled);
+  const btn = $('#micBtn');
+  btn.classList.toggle('off', !enabled);
+  btn.textContent = enabled ? 'Mic on' : 'Mic off';
+  document.getElementById('tile-local')?.classList.toggle('muted', !enabled);
+}
+
+function toggleCam() {
+  if (!localStream) return;
+  const tracks = localStream.getVideoTracks();
+  if (!tracks.length) return;
+  const enabled = !tracks[0].enabled;
+  tracks.forEach(t => t.enabled = enabled);
+  const btn = $('#camBtn');
+  btn.classList.toggle('off', !enabled);
+  btn.textContent = enabled ? 'Cam on' : 'Cam off';
+}
+
+function updateCallUI() {
+  const joinBtn = $('#joinCallBtn');
+  joinBtn.disabled = false;
+  joinBtn.style.display = inCall ? 'none' : 'block';
+  $('#callControls').classList.toggle('active', inCall);
+}
+
+$('#joinCallBtn').onclick = joinCall;
+$('#leaveCallBtn').onclick = leaveCall;
+$('#micBtn').onclick = toggleMic;
+$('#camBtn').onclick = toggleCam;
+
+// Clean up on tab close so peers see us leave promptly
+window.addEventListener('beforeunload', () => {
+  if (inCall) leaveCall();
+});

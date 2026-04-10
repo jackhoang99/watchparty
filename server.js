@@ -27,6 +27,7 @@ function createRoom(id) {
   return {
     id,
     members: new Map(),                                       // socketId -> { id, name, color }
+    callMembers: new Set(),                                   // socketIds currently in the voice/video call
     source: null,                                             // { type, value, title }
     playback: { playing: false, currentTime: 0, updatedAt: Date.now() },
     chat: []
@@ -169,12 +170,44 @@ io.on('connection', (socket) => {
     io.to(currentRoomId).emit('chat:message', entry);
   });
 
+  // ---------- WebRTC call signaling ----------
+  socket.on('call:join', () => {
+    if (!currentRoomId) return;
+    const room = rooms.get(currentRoomId);
+    if (!room) return;
+    if (!room.callMembers) room.callMembers = new Set();
+    if (room.callMembers.has(socket.id)) return;
+    room.callMembers.add(socket.id);
+    // Tell every existing call peer that a new peer joined — they will initiate the offer
+    socket.to(currentRoomId).emit('call:peer-joined', { id: socket.id });
+    io.to(currentRoomId).emit('call:roster', { members: Array.from(room.callMembers) });
+  });
+
+  socket.on('call:leave', () => {
+    if (!currentRoomId) return;
+    const room = rooms.get(currentRoomId);
+    if (!room || !room.callMembers) return;
+    if (!room.callMembers.delete(socket.id)) return;
+    socket.to(currentRoomId).emit('call:peer-left', { id: socket.id });
+    io.to(currentRoomId).emit('call:roster', { members: Array.from(room.callMembers) });
+  });
+
+  // Generic SDP/ICE relay between two peers in the same room
+  socket.on('webrtc:signal', ({ to, signal }) => {
+    if (!to || !signal) return;
+    io.to(to).emit('webrtc:signal', { from: socket.id, signal });
+  });
+
   socket.on('disconnect', () => {
     if (!currentRoomId) return;
     const room = rooms.get(currentRoomId);
     if (!room) return;
     const left = room.members.get(socket.id);
     room.members.delete(socket.id);
+    if (room.callMembers && room.callMembers.delete(socket.id)) {
+      socket.to(currentRoomId).emit('call:peer-left', { id: socket.id });
+      io.to(currentRoomId).emit('call:roster', { members: Array.from(room.callMembers) });
+    }
     if (left) socket.to(currentRoomId).emit('room:member', { left });
     maybeReap(currentRoomId);
   });
