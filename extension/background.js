@@ -68,9 +68,12 @@ function scheduleReconnect() {
 chrome.runtime.onMessage.addListener((msg, sender) => {
   if (msg.type === 'send-to-room') {
     if (ws && ws.readyState === WebSocket.OPEN) {
+      const url = msg.url || '';
+      // Detect YouTube URLs — send as 'source-yt' so room uses the YT player
+      const isYT = /^https?:\/\/(www\.)?(youtube\.com\/watch|youtu\.be\/)/i.test(url);
       ws.send(JSON.stringify({
-        type: 'source',
-        url: msg.url || '',
+        type: isYT ? 'source-yt' : 'source',
+        url,
         title: msg.title || ''
       }));
       return Promise.resolve({ ok: true });

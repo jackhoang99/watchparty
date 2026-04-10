@@ -296,18 +296,15 @@ wss.on('connection', (ws) => {
           if (peer !== ws) { try { peer.send(data); } catch {} }
         }
       }
-    } else if (msg.type === 'source') {
+    } else if (msg.type === 'source' || msg.type === 'source-yt') {
       room.source = {
-        type: 'url',
+        type: msg.type === 'source-yt' ? 'youtube' : 'url',
         value: String(msg.url || ''),
         title: String(msg.title || '')
       };
       room.playback = { playing: false, currentTime: 0, updatedAt: Date.now() };
-      io.to(roomId).emit('source:change', room.source);
-      io.to(roomId).emit('extension:event', {
-        kind: 'status',
-        text: 'Watching: ' + (room.source.title || room.source.value)
-      });
+      broadcastSource(roomId, room.source);
+      broadcastPlayback(roomId, room.playback);
     }
   });
 

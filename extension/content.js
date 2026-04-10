@@ -2,6 +2,19 @@
 // When clicked, sends the video URL to the watchparty room so everyone can watch.
 
 (function () {
+  // Guard: if extension was reloaded, old content scripts become zombies.
+  // Check once and bail out if the context is dead.
+  function isAlive() {
+    try { return !!chrome.runtime?.id; } catch { return false; }
+  }
+  if (!isAlive()) return;
+
+  // Safe wrapper for chrome.runtime.sendMessage
+  function safeSend(msg) {
+    if (!isAlive()) return Promise.reject('dead');
+    return chrome.runtime.sendMessage(msg);
+  }
+
   let button = null;
   let currentVideo = null;
   const capturedUrls = new Set();
@@ -18,6 +31,10 @@
     });
     obs.observe({ type: 'resource', buffered: true });
   } catch {}
+
+  // Page-level interceptor skipped — CSP on many sites blocks inline scripts.
+  // We rely on PerformanceObserver + video element scanning instead, which work
+  // in the content script's isolated world without CSP issues.
 
   // --- Find the best playable URL for a video element ---
   function getVideoUrl(video) {
@@ -45,7 +62,7 @@
 
   // --- Create the floating button ---
   function createButton() {
-    if (button) return;
+    if (button || !isAlive()) return;
     button = document.createElement('div');
     button.innerHTML = `
       <div style="
@@ -88,6 +105,7 @@
 
   // --- Send video URL to the room ---
   async function sendToRoom() {
+    if (!isAlive()) return;
     const url = currentVideo ? getVideoUrl(currentVideo) : null;
     if (!url) {
       showFeedback('No playable URL found', false);
@@ -95,7 +113,7 @@
     }
 
     try {
-      await chrome.runtime.sendMessage({
+      await safeSend({
         type: 'send-to-room',
         url: url,
         title: document.title
@@ -122,7 +140,7 @@
   let autoSendDone = false;
 
   function tryAutoSend() {
-    if (autoSendDone) return;
+    if (autoSendDone || !isAlive()) return;
     const video = document.querySelector('video');
     if (!video) return;
     const url = getVideoUrl(video);
@@ -134,7 +152,7 @@
         if (data.autoSendToRoom && !autoSendDone) {
           autoSendDone = true;
           chrome.storage.local.remove('autoSendToRoom');
-          chrome.runtime.sendMessage({
+          safeSend({
             type: 'send-to-room',
             url: url,
             title: document.title
@@ -148,12 +166,13 @@
 
   // --- Scan for videos and show button when appropriate ---
   function tryShowButton() {
+    if (!isAlive()) { cleanup(); return; }
     const video = document.querySelector('video');
     if (!video) { removeButton(); return; }
     currentVideo = video;
 
     // Check if we're connected to a room
-    chrome.runtime.sendMessage({ type: 'get-status' }).then(status => {
+    safeSend({ type: 'get-status' }).then(status => {
       if (status?.connected) {
         const url = getVideoUrl(video);
         if (url || capturedUrls.size > 0) {
@@ -166,43 +185,45 @@
     }).catch(() => {});
   }
 
-  // Scan on load and watch for DOM changes
-  tryShowButton();
-  const obs = new MutationObserver(tryShowButton);
-  obs.observe(document.documentElement, { childList: true, subtree: true });
-
-  // Re-check periodically (some players load video src lazily)
-  setInterval(tryShowButton, 3000);
-
-  // --- Still handle remote playback sync (for extension-to-extension mode) ---
+  // --- Single main loop: scans for videos, shows button, attaches events ---
   let suppress = false;
-  function sendPlayback(playing) {
-    if (!currentVideo || suppress) return;
-    chrome.runtime.sendMessage({
-      type: 'video-event',
-      playing,
-      currentTime: currentVideo.currentTime
-    }).catch(() => {});
-  }
-
-  // Watch for video events
   const attachedVideos = new WeakSet();
-  function attachEvents(v) {
-    if (attachedVideos.has(v)) return;
-    attachedVideos.add(v);
-    v.addEventListener('play', () => sendPlayback(true));
-    v.addEventListener('pause', () => sendPlayback(false));
-    v.addEventListener('seeked', () => sendPlayback(!v.paused));
+
+  function sendPlayback(playing) {
+    if (!currentVideo || suppress || !isAlive()) return;
+    safeSend({ type: 'video-event', playing, currentTime: currentVideo.currentTime }).catch(() => {});
   }
 
-  new MutationObserver(() => {
+  function mainScan() {
+    if (!isAlive()) { cleanup(); return; }
     const v = document.querySelector('video');
-    if (v) attachEvents(v);
-  }).observe(document.documentElement, { childList: true, subtree: true });
-  const v = document.querySelector('video');
-  if (v) attachEvents(v);
+    if (v && !attachedVideos.has(v)) {
+      attachedVideos.add(v);
+      v.addEventListener('play', () => sendPlayback(true));
+      v.addEventListener('pause', () => sendPlayback(false));
+      v.addEventListener('seeked', () => sendPlayback(!v.paused));
+    }
+    tryShowButton();
+  }
+
+  // One observer, one interval — both cleaned up if context dies
+  const mainObs = new MutationObserver(mainScan);
+  mainObs.observe(document.documentElement, { childList: true, subtree: true });
+  const mainInterval = setInterval(() => {
+    if (!isAlive()) { cleanup(); return; }
+    mainScan();
+  }, 3000);
+
+  function cleanup() {
+    mainObs.disconnect();
+    clearInterval(mainInterval);
+    removeButton();
+  }
+
+  mainScan();
 
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (!isAlive()) return;
     // --- Return the single best video URL ---
     if (msg.type === 'get-video-url') {
       const video = document.querySelector('video');
@@ -314,6 +335,14 @@
   function getAllVideoUrls() {
     const urls = [];
     const seen = new Set();
+
+    // 0. Always include the page URL if it looks like a video page (YouTube, Vimeo, etc.)
+    const pageUrl = location.href;
+    const isVideoPage = /youtube\.com\/watch|youtu\.be\/|vimeo\.com\/\d|dailymotion\.com\/video/i.test(pageUrl);
+    if (isVideoPage) {
+      urls.push({ url: pageUrl, source: 'this page (YouTube/video link)' });
+      seen.add(pageUrl);
+    }
 
     // 1. From captured network requests (PerformanceObserver)
     for (const url of capturedUrls) {

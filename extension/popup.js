@@ -65,10 +65,15 @@ function updateUI(connected, roomId) {
 // --- Detect if current page is a movie page or a browse page ---
 function isMoviePage(url) {
   try {
-    const path = new URL(url).pathname;
+    const u = new URL(url);
+    // YouTube watch pages
+    if ((u.hostname.includes('youtube.com') && u.searchParams.has('v')) ||
+        u.hostname.includes('youtu.be')) return true;
+    // Vimeo, Dailymotion
+    if (/vimeo\.com\/\d|dailymotion\.com\/video/i.test(url)) return true;
     // Common movie/watch page patterns
-    return /\/(w|watch|play|video|episode|phim|film|movie|v)\//i.test(path) ||
-           /-(episode|id|tt)\d/i.test(path);
+    return /\/(w|watch|play|video|episode|phim|film|movie|v)\//i.test(u.pathname) ||
+           /-(episode|id|tt)\d/i.test(u.pathname);
   } catch { return false; }
 }
 
@@ -83,76 +88,89 @@ async function crawlCurrentPage() {
   let host;
   try { host = new URL(tab.url).hostname.replace('www.', ''); } catch { return; }
 
-  // If we're on a movie/video page, show all detected video URLs to pick from
+  // If we're on a video page, show send options
   if (isMoviePage(tab.url)) {
     moviesLabel.textContent = tab.title || 'Video page';
     moviesCount.textContent = '';
-    moviesList.innerHTML = '<div class="movies-loading">Detecting video sources...</div>';
 
+    // Collect URLs: start with the page URL itself, then add detected streams
+    const allUrls = [];
+
+    // For YouTube/Vimeo — the page URL IS the video
+    const isYT = /youtube\.com\/watch|youtu\.be\//i.test(tab.url);
+    const isVimeo = /vimeo\.com\/\d/i.test(tab.url);
+    if (isYT || isVimeo) {
+      allUrls.push({ url: tab.url, source: isYT ? 'YouTube video' : 'Vimeo video', typeLabel: isYT ? 'YT' : 'Video', typeColor: '#e50914' });
+    }
+
+    // Also try to get detected stream URLs from content script
     try {
       const resp = await chrome.tabs.sendMessage(tab.id, { type: 'get-all-video-urls' });
-      const urls = resp?.urls || [];
-
-      if (urls.length === 0) {
-        moviesList.innerHTML = '<div class="movies-empty">No video URLs detected yet — try playing the video first, then reopen this popup</div>';
-        return;
-      }
-
-      moviesCount.textContent = urls.length + ' source' + (urls.length > 1 ? 's' : '');
-      moviesList.innerHTML = '';
-
-      urls.forEach((entry, i) => {
-        const item = document.createElement('div');
-        item.className = 'movie-item';
-
-        // Determine type label
-        let typeLabel = 'Video';
-        let typeColor = '#888';
-        if (/\.m3u8/i.test(entry.url)) { typeLabel = 'HLS'; typeColor = '#e50914'; }
-        else if (/\.mp4/i.test(entry.url)) { typeLabel = 'MP4'; typeColor = '#22c55e'; }
-        else if (/\.webm/i.test(entry.url)) { typeLabel = 'WebM'; typeColor = '#3b82f6'; }
-
-        // Truncate URL for display
-        let displayUrl;
-        try {
-          const u = new URL(entry.url);
-          displayUrl = u.pathname.split('/').pop() || u.pathname;
-          if (displayUrl.length > 40) displayUrl = displayUrl.slice(0, 37) + '...';
-        } catch {
-          displayUrl = entry.url.slice(0, 40) + '...';
-        }
-
-        item.innerHTML = `
-          <div style="
-            background: ${typeColor}; color: #fff; font-size: 9px; font-weight: 800;
-            padding: 2px 6px; border-radius: 3px; flex-shrink: 0; letter-spacing: 0.5px;
-          ">${typeLabel}</div>
-          <div class="movie-info">
-            <div class="movie-title" style="font-size:11px">${esc(displayUrl)}</div>
-            ${entry.source ? `<div class="movie-meta">${esc(entry.source)}</div>` : ''}
-          </div>
-          <button class="movie-go">Send</button>
-        `;
-
-        item.querySelector('.movie-go').onclick = async (e) => {
-          e.stopPropagation();
-          const btn = e.target;
-          btn.textContent = '...';
-          try {
-            await chrome.runtime.sendMessage({ type: 'send-to-room', url: entry.url, title: tab.title || '' });
-            btn.textContent = 'Sent!';
-            btn.style.background = '#22c55e';
-          } catch {
-            btn.textContent = 'Error';
-            btn.style.background = '#666';
+      if (resp?.urls) {
+        resp.urls.forEach(entry => {
+          if (!allUrls.find(u => u.url === entry.url)) {
+            let typeLabel = 'Video', typeColor = '#888';
+            if (/\.m3u8/i.test(entry.url)) { typeLabel = 'HLS'; typeColor = '#e50914'; }
+            else if (/\.mp4/i.test(entry.url)) { typeLabel = 'MP4'; typeColor = '#22c55e'; }
+            else if (/\.webm/i.test(entry.url)) { typeLabel = 'WebM'; typeColor = '#3b82f6'; }
+            else if (/youtube|youtu\.be/i.test(entry.url)) { typeLabel = 'YT'; typeColor = '#e50914'; }
+            allUrls.push({ ...entry, typeLabel, typeColor });
           }
-        };
+        });
+      }
+    } catch {}
 
-        moviesList.appendChild(item);
-      });
-    } catch {
-      moviesList.innerHTML = '<div class="movies-empty">Could not reach page — try refreshing</div>';
+    if (allUrls.length === 0) {
+      moviesList.innerHTML = '<div class="movies-empty">No video detected — try playing the video first</div>';
+      return;
     }
+
+    moviesCount.textContent = allUrls.length + ' source' + (allUrls.length > 1 ? 's' : '');
+    moviesList.innerHTML = '';
+
+    allUrls.forEach(entry => {
+      const item = document.createElement('div');
+      item.className = 'movie-item';
+
+      let displayUrl;
+      try {
+        const u = new URL(entry.url);
+        if (/youtube|youtu\.be/i.test(entry.url)) {
+          displayUrl = 'YouTube: ' + (u.searchParams.get('v') || u.pathname);
+        } else {
+          displayUrl = u.pathname.split('/').pop() || u.pathname;
+        }
+        if (displayUrl.length > 45) displayUrl = displayUrl.slice(0, 42) + '...';
+      } catch { displayUrl = entry.url.slice(0, 42) + '...'; }
+
+      item.innerHTML = `
+        <div style="
+          background: ${entry.typeColor || '#888'}; color: #fff; font-size: 9px; font-weight: 800;
+          padding: 2px 6px; border-radius: 3px; flex-shrink: 0; letter-spacing: 0.5px;
+        ">${esc(entry.typeLabel || 'Video')}</div>
+        <div class="movie-info">
+          <div class="movie-title" style="font-size:11px">${esc(displayUrl)}</div>
+          ${entry.source ? `<div class="movie-meta">${esc(entry.source)}</div>` : ''}
+        </div>
+        <button class="movie-go">Send</button>
+      `;
+
+      item.querySelector('.movie-go').onclick = async (e) => {
+        e.stopPropagation();
+        const btn = e.target;
+        btn.textContent = '...';
+        try {
+          await chrome.runtime.sendMessage({ type: 'send-to-room', url: entry.url, title: tab.title || '' });
+          btn.textContent = 'Sent!';
+          btn.style.background = '#22c55e';
+        } catch {
+          btn.textContent = 'Error';
+          btn.style.background = '#666';
+        }
+      };
+
+      moviesList.appendChild(item);
+    });
     return;
   }
 
