@@ -2,3 +2,5 @@ node_modules/
 .DS_Store
 .env
 *.log
+watchparty-extension.zip
+node_modules
