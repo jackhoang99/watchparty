@@ -128,19 +128,22 @@
     const url = getVideoUrl(video);
     if (!url) return;
 
-    chrome.storage.local.get('autoSendToRoom', (data) => {
-      if (data.autoSendToRoom && !autoSendDone) {
-        autoSendDone = true;
-        chrome.storage.local.remove('autoSendToRoom');
-        chrome.runtime.sendMessage({
-          type: 'send-to-room',
-          url: url,
-          title: document.title
-        }).then(() => {
-          showFeedback('Sent to room!', true);
-        }).catch(() => {});
-      }
-    });
+    try {
+      chrome.storage.local.get('autoSendToRoom', (data) => {
+        if (chrome.runtime.lastError) return;
+        if (data.autoSendToRoom && !autoSendDone) {
+          autoSendDone = true;
+          chrome.storage.local.remove('autoSendToRoom');
+          chrome.runtime.sendMessage({
+            type: 'send-to-room',
+            url: url,
+            title: document.title
+          }).then(() => {
+            showFeedback('Sent to room!', true);
+          }).catch(() => {});
+        }
+      });
+    } catch {}
   }
 
   // --- Scan for videos and show button when appropriate ---
@@ -200,6 +203,21 @@
   if (v) attachEvents(v);
 
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    // --- Return the single best video URL ---
+    if (msg.type === 'get-video-url') {
+      const video = document.querySelector('video');
+      const url = video ? getVideoUrl(video) : null;
+      sendResponse({ url: url || null });
+      return true;
+    }
+
+    // --- Return ALL detected video URLs on this page ---
+    if (msg.type === 'get-all-video-urls') {
+      const urls = getAllVideoUrls();
+      sendResponse({ urls });
+      return true;
+    }
+
     // --- Scrape all movie/show links from the current page ---
     if (msg.type === 'scrape-movies') {
       const movies = scrapePageForMovies();
@@ -290,5 +308,61 @@
     results.sort((a, b) => (b.poster ? 1 : 0) - (a.poster ? 1 : 0));
 
     return results;
+  }
+
+  // --- Get ALL video URLs found on this page ---
+  function getAllVideoUrls() {
+    const urls = [];
+    const seen = new Set();
+
+    // 1. From captured network requests (PerformanceObserver)
+    for (const url of capturedUrls) {
+      if (!seen.has(url)) {
+        seen.add(url);
+        urls.push({ url, source: 'network request' });
+      }
+    }
+
+    // 2. From video elements
+    document.querySelectorAll('video').forEach((v, i) => {
+      const label = 'video element' + (i > 0 ? ' #' + (i + 1) : '');
+      if (v.currentSrc && !v.currentSrc.startsWith('blob:') && !seen.has(v.currentSrc)) {
+        seen.add(v.currentSrc);
+        urls.push({ url: v.currentSrc, source: label });
+      }
+      if (v.src && !v.src.startsWith('blob:') && v.src !== v.currentSrc && !seen.has(v.src)) {
+        seen.add(v.src);
+        urls.push({ url: v.src, source: label + ' (src)' });
+      }
+      v.querySelectorAll('source').forEach(s => {
+        if (s.src && !s.src.startsWith('blob:') && !seen.has(s.src)) {
+          seen.add(s.src);
+          urls.push({ url: s.src, source: label + ' (source tag)' });
+        }
+      });
+    });
+
+    // 3. Scan page for video URLs in script tags / iframes
+    document.querySelectorAll('script').forEach(s => {
+      const text = s.textContent || '';
+      const matches = text.match(/https?:\/\/[^\s"'<>]+\.(m3u8|mp4|webm)(\?[^\s"'<>]*)*/gi);
+      if (matches) {
+        matches.forEach(url => {
+          if (!seen.has(url)) {
+            seen.add(url);
+            urls.push({ url, source: 'page script' });
+          }
+        });
+      }
+    });
+
+    // Sort: HLS first, then MP4, then others
+    urls.sort((a, b) => {
+      const scoreA = /\.m3u8/i.test(a.url) ? 2 : /\.mp4/i.test(a.url) ? 1 : 0;
+      const scoreB = /\.m3u8/i.test(b.url) ? 2 : /\.mp4/i.test(b.url) ? 1 : 0;
+      return scoreB - scoreA;
+    });
+
+    return urls;
   }
 })();

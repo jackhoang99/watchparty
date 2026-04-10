@@ -62,20 +62,102 @@ function updateUI(connected, roomId) {
   }
 }
 
-// --- Auto-crawl current page for movies ---
+// --- Detect if current page is a movie page or a browse page ---
+function isMoviePage(url) {
+  try {
+    const path = new URL(url).pathname;
+    // Common movie/watch page patterns
+    return /\/(w|watch|play|video|episode|phim|film|movie|v)\//i.test(path) ||
+           /-(episode|id|tt)\d/i.test(path);
+  } catch { return false; }
+}
+
+// --- Auto-crawl or show "send to room" based on page type ---
 async function crawlCurrentPage() {
   const tab = await getCurrentTab();
-  if (!tab?.id) {
+  if (!tab?.id || !tab?.url) {
     moviesList.innerHTML = '<div class="movies-empty">Open a streaming site to see movies</div>';
     return;
   }
 
-  // Update label with site name
-  try {
-    const host = new URL(tab.url).hostname.replace('www.', '');
-    moviesLabel.textContent = 'On ' + host;
-  } catch {}
+  let host;
+  try { host = new URL(tab.url).hostname.replace('www.', ''); } catch { return; }
 
+  // If we're on a movie/video page, show all detected video URLs to pick from
+  if (isMoviePage(tab.url)) {
+    moviesLabel.textContent = tab.title || 'Video page';
+    moviesCount.textContent = '';
+    moviesList.innerHTML = '<div class="movies-loading">Detecting video sources...</div>';
+
+    try {
+      const resp = await chrome.tabs.sendMessage(tab.id, { type: 'get-all-video-urls' });
+      const urls = resp?.urls || [];
+
+      if (urls.length === 0) {
+        moviesList.innerHTML = '<div class="movies-empty">No video URLs detected yet — try playing the video first, then reopen this popup</div>';
+        return;
+      }
+
+      moviesCount.textContent = urls.length + ' source' + (urls.length > 1 ? 's' : '');
+      moviesList.innerHTML = '';
+
+      urls.forEach((entry, i) => {
+        const item = document.createElement('div');
+        item.className = 'movie-item';
+
+        // Determine type label
+        let typeLabel = 'Video';
+        let typeColor = '#888';
+        if (/\.m3u8/i.test(entry.url)) { typeLabel = 'HLS'; typeColor = '#e50914'; }
+        else if (/\.mp4/i.test(entry.url)) { typeLabel = 'MP4'; typeColor = '#22c55e'; }
+        else if (/\.webm/i.test(entry.url)) { typeLabel = 'WebM'; typeColor = '#3b82f6'; }
+
+        // Truncate URL for display
+        let displayUrl;
+        try {
+          const u = new URL(entry.url);
+          displayUrl = u.pathname.split('/').pop() || u.pathname;
+          if (displayUrl.length > 40) displayUrl = displayUrl.slice(0, 37) + '...';
+        } catch {
+          displayUrl = entry.url.slice(0, 40) + '...';
+        }
+
+        item.innerHTML = `
+          <div style="
+            background: ${typeColor}; color: #fff; font-size: 9px; font-weight: 800;
+            padding: 2px 6px; border-radius: 3px; flex-shrink: 0; letter-spacing: 0.5px;
+          ">${typeLabel}</div>
+          <div class="movie-info">
+            <div class="movie-title" style="font-size:11px">${esc(displayUrl)}</div>
+            ${entry.source ? `<div class="movie-meta">${esc(entry.source)}</div>` : ''}
+          </div>
+          <button class="movie-go">Send</button>
+        `;
+
+        item.querySelector('.movie-go').onclick = async (e) => {
+          e.stopPropagation();
+          const btn = e.target;
+          btn.textContent = '...';
+          try {
+            await chrome.runtime.sendMessage({ type: 'send-to-room', url: entry.url, title: tab.title || '' });
+            btn.textContent = 'Sent!';
+            btn.style.background = '#22c55e';
+          } catch {
+            btn.textContent = 'Error';
+            btn.style.background = '#666';
+          }
+        };
+
+        moviesList.appendChild(item);
+      });
+    } catch {
+      moviesList.innerHTML = '<div class="movies-empty">Could not reach page — try refreshing</div>';
+    }
+    return;
+  }
+
+  // Otherwise, crawl the page for movie links
+  moviesLabel.textContent = 'On ' + host;
   moviesList.innerHTML = '<div class="movies-loading">Scanning page...</div>';
 
   try {
@@ -101,7 +183,6 @@ async function crawlCurrentPage() {
         <button class="movie-go">Watch</button>
       `;
       const go = () => {
-        // Set flag so content script auto-sends the video to room once detected
         chrome.storage.local.set({ autoSendToRoom: true });
         chrome.tabs.update(tab.id, { url: movie.url });
         window.close();
