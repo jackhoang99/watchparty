@@ -1,9 +1,38 @@
 const express = require('express');
 const http = require('http');
+const https = require('https');
 const path = require('path');
 const { Server } = require('socket.io');
 const { WebSocketServer } = require('ws');
 const { nanoid } = require('nanoid');
+
+// Helper: fetch with fallback for older Node versions
+function apiFetch(url, options = {}) {
+  if (typeof globalThis.fetch === 'function') {
+    return globalThis.fetch(url, options);
+  }
+  // Fallback using https module
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const reqOptions = {
+      hostname: parsed.hostname,
+      port: parsed.port || 443,
+      path: parsed.pathname + parsed.search,
+      method: options.method || 'GET',
+      headers: options.headers || {}
+    };
+    const req = https.request(reqOptions, (res) => {
+      let body = '';
+      res.on('data', chunk => body += chunk);
+      res.on('end', () => {
+        resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, json: () => Promise.resolve(JSON.parse(body)) });
+      });
+    });
+    req.on('error', reject);
+    if (options.body) req.write(options.body);
+    req.end();
+  });
+}
 
 const app = express();
 const server = http.createServer(app);
@@ -123,7 +152,7 @@ app.get('/api/turn', async (req, res) => {
     ]);
   }
   try {
-    const r = await fetch('https://rtc.live.cloudflare.com/v1/turn/keys/' + apiKey + '/credentials/generate', {
+    const r = await apiFetch('https://rtc.live.cloudflare.com/v1/turn/keys/' + apiKey + '/credentials/generate', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
       body: JSON.stringify({ ttl: 86400 })
@@ -223,16 +252,22 @@ io.on('connection', (socket) => {
       return;
     }
     try {
-      const resp = await fetch('https://engine.hyperbeam.com/v0/vm', {
+      const resp = await apiFetch('https://engine.hyperbeam.com/v0/vm', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ start_url: url || 'https://google.com' })
       });
-      if (!resp.ok) throw new Error('Hyperbeam API error: ' + resp.status);
+      if (!resp.ok) {
+        const errBody = await resp.json().catch(() => ({}));
+        console.error('Hyperbeam API error:', resp.status, errBody);
+        throw new Error('Hyperbeam API error: ' + resp.status + ' ' + (errBody.error || ''));
+      }
       const data = await resp.json();
+      console.log('Hyperbeam session created:', data.session_id);
       room.vbrowser = { embedUrl: data.embed_url, sessionId: data.session_id, startedBy: socket.id };
       io.to(currentRoomId).emit('vbrowser:started', room.vbrowser);
     } catch (err) {
+      console.error('Hyperbeam error:', err);
       socket.emit('vbrowser:error', { message: err.message || 'Failed to create virtual browser' });
     }
   });

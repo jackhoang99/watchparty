@@ -9,6 +9,7 @@ RUN npm ci --omit=dev
 # Copy only what the server needs at runtime
 COPY server.js ./
 COPY public ./public
+COPY extension ./extension
 
 ENV NODE_ENV=production
 ENV PORT=3000
