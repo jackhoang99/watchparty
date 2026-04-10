@@ -45,6 +45,7 @@ function serializeRoom(room) {
   return {
     id: room.id,
     members: Array.from(room.members.values()),
+    callMembers: Array.from(room.callMembers || []),
     source: room.source,
     playback: room.playback,
     chat: room.chat
@@ -168,6 +169,16 @@ io.on('connection', (socket) => {
     room.chat.push(entry);
     if (room.chat.length > 200) room.chat.shift();
     io.to(currentRoomId).emit('chat:message', entry);
+  });
+
+  socket.on('room:rename', ({ name: newName }) => {
+    if (!currentRoomId) return;
+    const room = rooms.get(currentRoomId);
+    if (!room) return;
+    const member = room.members.get(socket.id);
+    if (!member) return;
+    member.name = (String(newName || 'guest')).slice(0, 24) || 'guest';
+    io.to(currentRoomId).emit('room:members', Array.from(room.members.values()));
   });
 
   // ---------- WebRTC call signaling ----------

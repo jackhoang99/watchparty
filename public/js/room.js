@@ -4,9 +4,27 @@ $('#roomId').textContent = roomId;
 document.title = `room ${roomId} · watchparty`;
 
 const name = localStorage.getItem('wp.name') || 'guest';
+const myNameInput = $('#myName');
+myNameInput.value = name;
 
 const socket = io();
 socket.emit('room:join', { roomId, name });
+
+// Editable name — save on button click or Enter
+function commitNameChange() {
+  const newName = myNameInput.value.trim().slice(0, 24) || 'guest';
+  myNameInput.value = newName;
+  localStorage.setItem('wp.name', newName);
+  socket.emit('room:rename', { name: newName });
+  // Brief visual feedback
+  const btn = $('#saveName');
+  btn.style.color = '#4ade80';
+  setTimeout(() => { btn.style.color = ''; }, 800);
+}
+$('#saveName').onclick = commitNameChange;
+myNameInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); commitNameChange(); myNameInput.blur(); }
+});
 
 // ---------- DOM refs ----------
 const ytWrap = $('#yt-wrap');
@@ -60,7 +78,7 @@ window.onYouTubeIframeAPIReady = () => {
 // ---------- mode switching ----------
 function setMode(mode) {
   activeMode = mode;
-  emptyEl.style.display = mode ? 'none' : 'block';
+  emptyEl.style.display = mode ? 'none' : 'flex';
   ytWrap.style.display = mode === 'youtube' ? 'block' : 'none';
   nativeEl.style.display = mode === 'url' ? 'block' : 'none';
   extInfoEl.style.display = mode === 'extension' ? 'block' : 'none';
@@ -213,6 +231,12 @@ socket.on('room:member', ({ joined, left }) => {
   renderMembers(memberCache);
 });
 
+// Full member list refresh (e.g. after a rename)
+socket.on('room:members', (members) => {
+  memberCache = members;
+  renderMembers(memberCache);
+});
+
 function renderMembers(members) {
   const ul = $('#members');
   ul.innerHTML = '';
@@ -221,7 +245,57 @@ function renderMembers(members) {
     const dot = document.createElement('span');
     dot.className = 'dot';
     dot.style.background = m.color;
-    li.append(dot, document.createTextNode(m.name));
+
+    const isMe = m.id === socket.id;
+
+    if (isMe) {
+      // Editable name: show text + pencil icon, click to edit inline
+      const nameSpan = document.createElement('span');
+      nameSpan.textContent = m.name;
+      nameSpan.className = 'member-name';
+
+      const editBtn = document.createElement('button');
+      editBtn.className = 'edit-name-btn';
+      editBtn.title = 'Edit name';
+      editBtn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.85 0 114 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>';
+
+      const nameInput = document.createElement('input');
+      nameInput.className = 'edit-name-input';
+      nameInput.value = m.name;
+      nameInput.maxLength = 24;
+      nameInput.style.display = 'none';
+
+      editBtn.onclick = () => {
+        nameSpan.style.display = 'none';
+        editBtn.style.display = 'none';
+        nameInput.style.display = '';
+        nameInput.focus();
+        nameInput.select();
+      };
+
+      const commitEdit = () => {
+        const newName = nameInput.value.trim().slice(0, 24) || 'guest';
+        nameInput.style.display = 'none';
+        nameSpan.textContent = newName;
+        nameSpan.style.display = '';
+        editBtn.style.display = '';
+        localStorage.setItem('wp.name', newName);
+        myNameInput.value = newName;
+        socket.emit('room:rename', { name: newName });
+      };
+
+      nameInput.addEventListener('blur', commitEdit);
+      nameInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); nameInput.blur(); }
+        if (e.key === 'Escape') { nameInput.value = m.name; nameInput.blur(); }
+      });
+
+      li.append(dot, nameSpan, editBtn, nameInput);
+      li.classList.add('me');
+    } else {
+      li.append(dot, document.createTextNode(m.name));
+    }
+
     ul.appendChild(li);
   });
 }
@@ -414,9 +488,9 @@ function cycleFilter() {
   if (!inCall) return;
   filterIdx = (filterIdx + 1) % FILTERS.length;
   const f = FILTERS[filterIdx];
-  const btn = $('#filterBtn');
-  btn.textContent = f.name;
-  btn.classList.toggle('on', filterIdx !== 0);
+  const label = $('#filterBtn .filter-label');
+  if (label) label.textContent = f.name;
+  $('#filterBtn').classList.toggle('on', filterIdx !== 0);
 }
 
 function createPeer(remoteId, isInitiator) {
@@ -467,8 +541,19 @@ function createPeer(remoteId, isInitiator) {
 
 socket.on('call:peer-joined', ({ id }) => {
   if (!inCall || id === socket.id) return;
-  // I'm an existing call member; the new joiner needs an offer from me
   createPeer(id, true);
+});
+
+// Fallback: when the server broadcasts the call roster, check for any peers we
+// should be connected to but aren't. This catches rejoins, dropped offers, etc.
+socket.on('call:roster', ({ members }) => {
+  if (!inCall) return;
+  for (const id of members) {
+    if (id === socket.id || peers.has(id)) continue;
+    setTimeout(() => {
+      if (!peers.has(id) && inCall) createPeer(id, true);
+    }, 2000);
+  }
 });
 
 socket.on('call:peer-left', ({ id }) => {
@@ -559,9 +644,7 @@ function toggleMic() {
   if (!tracks.length) return;
   const enabled = !tracks[0].enabled;
   tracks.forEach(t => t.enabled = enabled);
-  const btn = $('#micBtn');
-  btn.classList.toggle('off', !enabled);
-  btn.textContent = enabled ? 'Mic' : 'Mic off';
+  $('#micBtn').classList.toggle('off', !enabled);
   document.getElementById('tile-local')?.classList.toggle('muted', !enabled);
 }
 
@@ -571,9 +654,7 @@ function toggleCam() {
   if (!tracks.length) return;
   const enabled = !tracks[0].enabled;
   tracks.forEach(t => t.enabled = enabled);
-  const btn = $('#camBtn');
-  btn.classList.toggle('off', !enabled);
-  btn.textContent = enabled ? 'Cam' : 'Cam off';
+  $('#camBtn').classList.toggle('off', !enabled);
 }
 
 function updateCallUI() {
@@ -581,12 +662,11 @@ function updateCallUI() {
   joinBtn.disabled = false;
   joinBtn.style.display = inCall ? 'none' : 'block';
   $('#callControls').classList.toggle('active', inCall);
-  // reset button labels each time
-  $('#micBtn').textContent = 'Mic';
+  // reset button states (icons are in the HTML, just toggle classes)
   $('#micBtn').classList.remove('off');
-  $('#camBtn').textContent = 'Cam';
   $('#camBtn').classList.remove('off');
-  $('#filterBtn').textContent = FILTERS[filterIdx].name;
+  const fl = $('#filterBtn .filter-label');
+  if (fl) fl.textContent = FILTERS[filterIdx].name === 'Filter' ? 'Filter' : FILTERS[filterIdx].name;
   $('#filterBtn').classList.toggle('on', filterIdx !== 0);
 }
 
@@ -625,3 +705,23 @@ document.addEventListener('visibilitychange', () => {
     }, 1200);
   }
 });
+
+// ---------- light/dark theme toggle ----------
+(function() {
+  const toggle = document.getElementById('themeToggle');
+  const iconSun = document.getElementById('iconSun');
+  const iconMoon = document.getElementById('iconMoon');
+  if (!toggle) return;
+
+  function applyTheme(light) {
+    document.body.classList.toggle('light', light);
+    iconSun.classList.toggle('hidden', !light);
+    iconMoon.classList.toggle('hidden', light);
+    localStorage.setItem('wp.theme', light ? 'light' : 'dark');
+  }
+
+  // Restore saved preference
+  applyTheme(localStorage.getItem('wp.theme') === 'light');
+
+  toggle.onclick = () => applyTheme(!document.body.classList.contains('light'));
+})();

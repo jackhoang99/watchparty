@@ -4,26 +4,241 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>watchparty</title>
-  <link rel="stylesheet" href="/css/style.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: { DEFAULT: '#e50914', hover: '#ff1a25' },
+          },
+          animation: {
+            'fade-in': 'fadeIn 0.8s ease-out both',
+            'slide-up': 'slideUp 0.8s ease-out both',
+            'slide-up-2': 'slideUp 0.8s 0.1s ease-out both',
+            'slide-up-3': 'slideUp 0.8s 0.2s ease-out both',
+            'slide-up-4': 'slideUp 0.8s 0.35s ease-out both',
+          },
+          keyframes: {
+            fadeIn: { '0%': { opacity: '0' }, '100%': { opacity: '1' } },
+            slideUp: { '0%': { opacity: '0', transform: 'translateY(20px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } },
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Popcorn spill */
+    .kernel {
+      transform-origin: center;
+      transition: opacity 0.8s ease-out, transform 0.8s cubic-bezier(0.2, 0, 0.8, 1);
+    }
+    .bucket {
+      transform-origin: bottom center;
+      transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .bucket.tilt-right { transform: rotate(18deg); }
+    .bucket.tilt-left  { transform: rotate(-18deg); }
+
+    /* Shimmer + glow on CTA */
+    @keyframes shimmer {
+      0%   { background-position: -200% center; }
+      100% { background-position: 200% center; }
+    }
+    .btn-cta {
+      background-size: 200% 100%;
+      background-image: linear-gradient(105deg, #e50914 0%, #e50914 40%, #ff4d5a 50%, #e50914 60%, #e50914 100%);
+      animation: shimmer 3s ease-in-out infinite;
+    }
+  </style>
 </head>
-<body class="landing">
-  <div class="card">
-    <h1>watchparty</h1>
-    <p class="sub">Watch YouTube, movies, and any site together — in sync.</p>
+<body class="bg-black text-white min-h-screen flex flex-col font-[system-ui,-apple-system,sans-serif] overflow-hidden">
 
-    <label>Your name
-      <input id="name" placeholder="alex" maxlength="24" autocomplete="off">
-    </label>
+  <!-- Wallpaper backgrounds (dark + light, toggled by saved theme) -->
+  <iframe id="wallDark" src="/wallpaper.html" class="fixed inset-0 w-full h-full border-0 pointer-events-none" style="z-index:0" tabindex="-1" aria-hidden="true"></iframe>
+  <iframe id="wallLight" src="/wallpaper-light.html" class="fixed inset-0 w-full h-full border-0 pointer-events-none hidden" style="z-index:0" tabindex="-1" aria-hidden="true"></iframe>
 
-    <button id="create">Create a room</button>
+  <!-- Gradient overlay (dark mode) -->
+  <div id="overlayDark" class="fixed inset-0 pointer-events-none" style="z-index:1; background:
+    linear-gradient(to bottom, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.45) 30%, rgba(0,0,0,0.45) 60%, rgba(0,0,0,0.9) 100%),
+    radial-gradient(ellipse at 50% 50%, transparent 0%, rgba(0,0,0,0.6) 100%)
+  "></div>
+  <!-- Gradient overlay (light mode) -->
+  <div id="overlayLight" class="fixed inset-0 pointer-events-none hidden" style="z-index:1; background:
+    linear-gradient(to bottom, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0.4) 30%, rgba(255,255,255,0.4) 60%, rgba(255,255,255,0.85) 100%),
+    radial-gradient(ellipse at 50% 50%, transparent 0%, rgba(255,255,255,0.5) 100%)
+  "></div>
 
-    <div class="divider">or join an existing room</div>
+  <!-- Top bar -->
+  <header class="relative flex items-center justify-between px-6 sm:px-12 py-5" style="z-index:10">
+    <div class="flex items-center gap-2">
+      <svg viewBox="0 0 48 46" overflow="visible" class="w-8 h-8">
+        <path d="M13 24 L16 43 L32 43 L35 24 Z" fill="#e50914"/>
+        <path d="M19.5 24 L21.5 43" stroke="white" stroke-width="1.2" stroke-linecap="round" opacity="0.4"/>
+        <path d="M28.5 24 L26.5 43" stroke="white" stroke-width="1.2" stroke-linecap="round" opacity="0.4"/>
+        <circle cx="19" cy="27" r="4.5" fill="#F5E6C8"/>
+        <circle cx="29" cy="27" r="4.5" fill="#F0DDB8"/>
+        <circle cx="24" cy="26" r="4.8" fill="#F5E6C8"/>
+        <circle cx="16" cy="22" r="5" fill="#FFF3D6"/>
+        <circle cx="32" cy="22" r="5" fill="#FFF8E7"/>
+        <circle cx="24" cy="21" r="5.5" fill="#FFFDF5"/>
+        <circle cx="14" cy="17" r="4" fill="#FFFBE0"/>
+        <circle cx="20" cy="16" r="4.5" fill="#FFF8E7"/>
+        <circle cx="28" cy="15.5" r="4.5" fill="#FFFBE0"/>
+        <circle cx="34" cy="17.5" r="4" fill="#FFF3D6"/>
+        <circle cx="24" cy="11" r="3.8" fill="#FFFDF5"/>
+        <circle cx="18" cy="12" r="3.2" fill="#FFF8E7"/>
+        <circle cx="30" cy="11.5" r="3" fill="#FFFBE0"/>
+      </svg>
+      <span class="text-brand font-extrabold text-2xl tracking-tight">watchparty</span>
+    </div>
+  </header>
 
-    <label>Room code
-      <input id="code" placeholder="abc12345" autocomplete="off">
-    </label>
-    <button id="join" class="secondary">Join</button>
-  </div>
+  <!-- Main hero content -->
+  <main class="relative flex-1 flex flex-col items-center justify-center text-center px-6 -mt-12" style="z-index:10">
+
+    <!-- Animated popcorn logo -->
+    <div class="relative mb-6 animate-fade-in">
+      <div class="absolute inset-0 rounded-full bg-brand/25 blur-3xl scale-[2.5] opacity-30"></div>
+      <svg viewBox="0 0 48 46" overflow="visible" class="w-28 h-28 mx-auto drop-shadow-[0_0_35px_rgba(229,9,20,0.5)] relative">
+        <g class="bucket">
+          <path d="M13 24 L16 43 L32 43 L35 24 Z" fill="#e50914"/>
+          <path d="M19.5 24 L21.5 43" stroke="white" stroke-width="1.2" stroke-linecap="round" opacity="0.45"/>
+          <path d="M28.5 24 L26.5 43" stroke="white" stroke-width="1.2" stroke-linecap="round" opacity="0.45"/>
+        </g>
+        <circle class="kernel" cx="19" cy="27" r="4.5" fill="#F5E6C8" stroke="#e0cc9a" stroke-width="0.5"/>
+        <circle class="kernel" cx="29" cy="27" r="4.5" fill="#F0DDB8" stroke="#e0cc9a" stroke-width="0.5"/>
+        <circle class="kernel" cx="24" cy="26" r="4.8" fill="#F5E6C8" stroke="#e0cc9a" stroke-width="0.5"/>
+        <circle class="kernel" cx="16" cy="22" r="5" fill="#FFF3D6" stroke="#eedcb0" stroke-width="0.5"/>
+        <circle class="kernel" cx="32" cy="22" r="5" fill="#FFF8E7" stroke="#eedcb0" stroke-width="0.5"/>
+        <circle class="kernel" cx="24" cy="21" r="5.5" fill="#FFFDF5" stroke="#eedcb0" stroke-width="0.5"/>
+        <circle class="kernel" cx="14" cy="17" r="4" fill="#FFFBE0" stroke="#eedcb0" stroke-width="0.5"/>
+        <circle class="kernel" cx="20" cy="16" r="4.5" fill="#FFF8E7" stroke="#eedcb0" stroke-width="0.5"/>
+        <circle class="kernel" cx="28" cy="15.5" r="4.5" fill="#FFFBE0" stroke="#eedcb0" stroke-width="0.5"/>
+        <circle class="kernel" cx="34" cy="17.5" r="4" fill="#FFF3D6" stroke="#eedcb0" stroke-width="0.5"/>
+        <circle class="kernel" cx="24" cy="11" r="3.8" fill="#FFFDF5" stroke="#eedcb0" stroke-width="0.5"/>
+        <circle class="kernel" cx="18" cy="12" r="3.2" fill="#FFF8E7" stroke="#eedcb0" stroke-width="0.5"/>
+        <circle class="kernel" cx="30" cy="11.5" r="3" fill="#FFFBE0" stroke="#eedcb0" stroke-width="0.5"/>
+      </svg>
+    </div>
+
+    <!-- Headline -->
+    <h1 class="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight leading-tight max-w-2xl animate-slide-up">
+      Watch anything,<br>with anyone
+    </h1>
+
+    <p class="text-lg sm:text-xl text-gray-300 mt-4 max-w-xl animate-slide-up-2">
+      Sync YouTube, movies, and any site in real time. Video call your crew while you watch.
+    </p>
+
+    <!-- Inline form: name + Create -->
+    <p class="text-gray-400 text-sm mt-8 mb-3 animate-slide-up-3">Ready to watch? Enter your name to get started.</p>
+
+    <div class="flex flex-col sm:flex-row items-stretch gap-3 w-full max-w-lg animate-slide-up-3">
+      <input id="name" placeholder="Your name" maxlength="24" autocomplete="off"
+             class="flex-1 bg-black/60 border border-gray-600 text-white px-5 py-4 rounded sm:rounded-l sm:rounded-r-none text-base placeholder:text-gray-500 focus:outline-none focus:border-white transition-colors">
+      <button id="create"
+              class="btn-cta text-white font-bold py-4 px-8 rounded sm:rounded-r sm:rounded-l-none text-lg whitespace-nowrap transition-all duration-200 hover:brightness-110 active:scale-[0.98] flex items-center justify-center gap-2">
+        Get Started
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </button>
+    </div>
+
+    <!-- Divider + Join -->
+    <div class="flex items-center gap-4 mt-8 w-full max-w-lg animate-slide-up-4">
+      <div class="flex-1 h-px bg-gray-700"></div>
+      <span class="text-xs text-gray-500 uppercase tracking-widest">or join a room</span>
+      <div class="flex-1 h-px bg-gray-700"></div>
+    </div>
+
+    <div class="flex flex-col sm:flex-row items-stretch gap-3 w-full max-w-lg mt-3 animate-slide-up-4">
+      <input id="code" placeholder="Room code" autocomplete="off"
+             class="flex-1 bg-black/60 border border-gray-600 text-white px-5 py-3.5 rounded sm:rounded-l sm:rounded-r-none text-base placeholder:text-gray-500 focus:outline-none focus:border-white transition-colors">
+      <button id="join"
+              class="bg-gray-800/80 hover:bg-gray-700 border border-gray-600 hover:border-gray-500 text-white font-semibold py-3.5 px-8 rounded sm:rounded-r sm:rounded-l-none text-base whitespace-nowrap transition-all duration-200 active:scale-[0.98]">
+        Join
+      </button>
+    </div>
+  </main>
+
+  <!-- Bottom fade (like Netflix) -->
+  <div class="relative h-24 shrink-0" style="z-index:10; background: linear-gradient(to bottom, transparent, black)"></div>
+
   <script src="/js/landing.js"></script>
+  <script>
+    (function() {
+      const kernels = Array.from(document.querySelectorAll('.kernel'));
+      const bucket = document.querySelector('.bucket');
+      let goRight = false;
+
+      function spillTransform(k, dir) {
+        const xDrift = (dir === 'right' ? 1 : -1) * (20 + Math.random() * 35);
+        const yDrift = 30 + Math.random() * 30;
+        const spin = (Math.random() - 0.5) * 200;
+        k.style.transform = `translate(${xDrift}px, ${yDrift}px) rotate(${spin}deg) scale(0.3)`;
+        k.style.opacity = '0';
+      }
+
+      function cycle() {
+        goRight = !goRight;
+        const dir = goRight ? 'right' : 'left';
+
+        bucket.classList.add(goRight ? 'tilt-right' : 'tilt-left');
+        kernels.forEach(k => spillTransform(k, dir));
+
+        setTimeout(() => {
+          bucket.classList.remove('tilt-right', 'tilt-left');
+          setTimeout(() => {
+            kernels.forEach(k => {
+              k.style.transition = 'none';
+              k.style.transform = '';
+              k.style.opacity = '';
+            });
+            kernels[0].offsetHeight;
+            kernels.forEach(k => k.style.transition = '');
+          }, 250);
+          setTimeout(cycle, 1800);
+        }, 1000);
+      }
+
+      setTimeout(cycle, 1800);
+    })();
+  </script>
+  <script>
+    // Apply saved theme (from room page toggle)
+    (function() {
+      const isLight = localStorage.getItem('wp.theme') === 'light';
+      if (isLight) {
+        document.body.classList.replace('bg-black', 'bg-white');
+        document.body.classList.replace('text-white', 'text-gray-900');
+        document.getElementById('wallDark').classList.add('hidden');
+        document.getElementById('wallLight').classList.remove('hidden');
+        document.getElementById('overlayDark').classList.add('hidden');
+        document.getElementById('overlayLight').classList.remove('hidden');
+        // Restyle bottom fade
+        const fade = document.querySelector('[style*="linear-gradient(to bottom, transparent, black)"]');
+        if (fade) fade.style.background = 'linear-gradient(to bottom, transparent, white)';
+        // Restyle inputs and buttons for light
+        document.querySelectorAll('input').forEach(el => {
+          el.classList.remove('bg-black/60', 'border-gray-600', 'text-white', 'placeholder:text-gray-500');
+          el.classList.add('bg-white/80', 'border-gray-300', 'text-gray-900', 'placeholder:text-gray-400');
+        });
+        document.querySelectorAll('.btn-cta').forEach(el => el.style.color = '#fff');
+        const joinBtn = document.getElementById('join');
+        if (joinBtn) {
+          joinBtn.classList.remove('bg-gray-800/80', 'hover:bg-gray-700', 'border-gray-600', 'hover:border-gray-500', 'text-white');
+          joinBtn.classList.add('bg-gray-100', 'hover:bg-gray-200', 'border-gray-300', 'hover:border-gray-400', 'text-gray-900');
+        }
+        // Text colors
+        document.querySelectorAll('.text-gray-300').forEach(el => el.classList.replace('text-gray-300', 'text-gray-600'));
+        document.querySelectorAll('.text-gray-400').forEach(el => el.classList.replace('text-gray-400', 'text-gray-500'));
+        document.querySelectorAll('.text-gray-500').forEach(el => el.classList.replace('text-gray-500', 'text-gray-400'));
+        document.querySelectorAll('.text-gray-700').forEach(el => el.classList.replace('text-gray-700', 'text-gray-300'));
+        document.querySelectorAll('.bg-gray-700').forEach(el => el.classList.replace('bg-gray-700', 'bg-gray-200'));
+        // Brand name stays red
+        document.querySelector('.text-brand')?.classList.add('text-brand');
+      }
+    })();
+  </script>
 </body>
 </html>

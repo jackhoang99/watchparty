@@ -4,63 +4,270 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>watchparty room</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: { DEFAULT: '#e50914', hover: '#ff1a25' },
+            pk: { DEFAULT: '#ff6fae', light: '#ffa6cf', soft: '#ffe4ef', bg: '#2d1622', panel: '#361a28', border: '#5a2740' },
+          },
+          animation: {
+            'fade-in': 'fadeIn 0.4s ease-out both',
+            'slide-in': 'slideIn 0.3s ease-out both',
+            'scale-in': 'scaleIn 0.3s ease-out both',
+          },
+          keyframes: {
+            fadeIn: { '0%': { opacity: '0' }, '100%': { opacity: '1' } },
+            slideIn: { '0%': { opacity: '0', transform: 'translateX(-8px)' }, '100%': { opacity: '1', transform: 'translateX(0)' } },
+            scaleIn: { '0%': { opacity: '0', transform: 'scale(0.9)' }, '100%': { opacity: '1', transform: 'scale(1)' } },
+          }
+        }
+      }
+    }
+  </script>
   <link rel="stylesheet" href="/css/style.css">
+  <style>
+    /* ===== Light mode ===== */
+    body.light { background: #f5f5f5; color: #1a1a1a; }
+    /* ===== LIGHT MODE ===== */
+    body.light { background: #f4f4f4; color: #1a1a1a; }
+
+    /* -- Navbar -- */
+    body.light header > div:first-child { background: rgba(255,255,255,0.98); backdrop-filter: blur(12px); }
+    body.light header > div:last-child { background: #fff; border-color: #e0e0e0; }
+    body.light .text-brand { color: #e50914; }
+    body.light header .w-px { background: #e0e0e0; }
+    body.light select,
+    body.light header input { background: #fff; border-color: #ddd; color: #1a1a1a; }
+    body.light header input::placeholder { color: #999; }
+    body.light header input:focus,
+    body.light select:focus { border-color: #e50914; }
+    body.light .source-picker { background: #fff; border-color: #ddd; }
+    body.light .source-picker select { color: #555; border-color: #eee; }
+    body.light .source-picker input { color: #1a1a1a; }
+    body.light .source-picker input::placeholder { color: #aaa; }
+    body.light .source-picker:focus-within { border-color: #e50914; }
+    body.light #loadSource { background: #e50914; color: #fff; }
+    body.light code#roomId { background: rgba(229,9,20,0.08); color: #c00; border: 1px solid rgba(229,9,20,0.15); }
+    body.light #copyLink,
+    body.light a[href="/"],
+    body.light #themeToggle { background: #f0f0f0; border: 1px solid #ddd; color: #555; padding-left: 10px; padding-right: 10px; }
+    body.light #copyLink:hover,
+    body.light #themeToggle:hover { background: #e5e5e5; color: #1a1a1a; }
+    body.light a[href="/"]:hover { background: #fff0f0; color: #cc3333; border-color: #fcc; }
+    body.light .text-gray-500 { color: #888; }
+
+    /* -- Player area -- */
+    body.light .player-area { background: #f8f8f8; }
+    body.light .player-area .empty > div {
+      background: #fff;
+      border-color: #e5e5e5;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.06);
+    }
+    body.light .player-area .empty h2 { color: #1a1a1a; }
+    body.light .player-area .empty p { color: #666; }
+    body.light .player-area .empty strong { color: #1a1a1a; }
+    body.light .player-area .empty .rounded-full { background: rgba(229,9,20,0.06); }
+    body.light .player-area code { background: #f0f0f0; color: #555; border: 1px solid #e0e0e0; }
+
+    /* -- Sidebar -- */
+    body.light .sidebar { background: #fff; border-color: #e0e0e0; }
+    body.light .sidebar > div { border-color: #eee; }
+    body.light .sidebar label { color: #999; }
+    body.light .sidebar h3 { color: #e50914; }
+    body.light .sidebar input { background: #fafafa; border-color: #ddd; color: #1a1a1a; }
+    body.light .sidebar input::placeholder { color: #bbb; }
+    body.light .sidebar input:focus { border-color: #e50914; box-shadow: 0 0 0 3px rgba(229,9,20,0.08); }
+    body.light .edit-name-btn { color: #aaa; }
+    body.light .edit-name-btn:hover { color: #e50914; }
+    body.light .edit-name-input { background: #fff; color: #1a1a1a; border-color: #e50914; }
+    body.light #members li { background: #f8f8f8; border-color: #eee; color: #333; }
+    body.light .dot { box-shadow: 0 0 4px currentColor; }
+    body.light #joinCallBtn { background: #e50914; box-shadow: 0 2px 8px rgba(229,9,20,0.2); }
+    body.light .call-controls .control { background: #fafafa; border-color: #ddd; color: #333; }
+    body.light .call-controls .control:hover { background: #f0f0f0; }
+    body.light .call-controls .control.off { background: #fafafa; color: #ccc; border-color: #e8e8e8; }
+    body.light .call-controls .control.on { background: #e50914; border-color: #e50914; color: #fff; }
+    body.light .call-controls .control.danger { background: #fff5f5; border-color: #fdd; color: #cc3333; }
+    body.light .call-controls .control.danger:hover { background: #fee; }
+    body.light .video-tile { background: #f4f4f4; border-color: #ddd; }
+    body.light .video-tile.local { border-color: #e50914; }
+    body.light .video-tile video { background: #f4f4f4; }
+    body.light .tile-label { background: rgba(0,0,0,0.55); color: white; }
+
+    /* -- Chat -- */
+    body.light .msg { background: #f8f8f8; border-color: #eee; color: #1a1a1a; }
+    body.light .msg .who { color: inherit; }
+    body.light #chat-form { border-color: #eee; background: #fafafa; }
+    body.light #chat-input { background: #fff; border-color: #ddd; color: #1a1a1a; }
+    body.light #chat-input::placeholder { color: #bbb; }
+    body.light #chat-input:focus { border-color: #e50914; box-shadow: 0 0 0 3px rgba(229,9,20,0.08); }
+    body.light .chat-log::-webkit-scrollbar-thumb { background: #ddd; }
+    body.light .chat-log::-webkit-scrollbar-thumb:hover { background: #ccc; }
+  </style>
 </head>
-<body class="room">
-  <header>
-    <div class="brand">watchparty</div>
-    <div class="source-picker">
-      <select id="sourceType">
-        <option value="youtube">YouTube</option>
-        <option value="url">Direct video URL (.mp4 / .m3u8)</option>
-        <option value="extension">Extension (any site)</option>
-      </select>
-      <input id="sourceValue" placeholder="paste a YouTube link or video URL" autocomplete="off">
-      <button id="loadSource">Load</button>
+<body class="bg-black text-white font-[system-ui,-apple-system,sans-serif] flex flex-col h-screen overflow-hidden">
+
+  <!-- Header -->
+  <header class="shrink-0 animate-fade-in">
+    <!-- Top row: brand + room info + actions -->
+    <div class="flex items-center justify-between px-5 py-2.5 bg-gradient-to-b from-black/95 to-black/80 backdrop-blur-md">
+      <!-- Left: logo + room code -->
+      <div class="flex items-center gap-4">
+        <a href="/" class="flex items-center gap-2 shrink-0 no-underline group">
+          <svg viewBox="0 0 48 46" overflow="visible" class="w-7 h-7 group-hover:scale-110 transition-transform">
+            <path d="M13 24 L16 43 L32 43 L35 24 Z" fill="#e50914"/>
+            <path d="M19.5 24 L21.5 43" stroke="white" stroke-width="1.2" stroke-linecap="round" opacity="0.4"/>
+            <path d="M28.5 24 L26.5 43" stroke="white" stroke-width="1.2" stroke-linecap="round" opacity="0.4"/>
+            <circle cx="19" cy="27" r="4.5" fill="#F5E6C8"/><circle cx="29" cy="27" r="4.5" fill="#F0DDB8"/>
+            <circle cx="24" cy="26" r="4.8" fill="#F5E6C8"/><circle cx="16" cy="22" r="5" fill="#FFF3D6"/>
+            <circle cx="32" cy="22" r="5" fill="#FFF8E7"/><circle cx="24" cy="21" r="5.5" fill="#FFFDF5"/>
+            <circle cx="14" cy="17" r="4" fill="#FFFBE0"/><circle cx="20" cy="16" r="4.5" fill="#FFF8E7"/>
+            <circle cx="28" cy="15.5" r="4.5" fill="#FFFBE0"/><circle cx="34" cy="17.5" r="4" fill="#FFF3D6"/>
+            <circle cx="24" cy="11" r="3.8" fill="#FFFDF5"/><circle cx="18" cy="12" r="3.2" fill="#FFF8E7"/>
+            <circle cx="30" cy="11.5" r="3" fill="#FFFBE0"/>
+          </svg>
+          <span class="text-brand font-extrabold text-lg tracking-tight hidden sm:inline group-hover:text-brand-hover transition-colors">watchparty</span>
+        </a>
+        <div class="h-5 w-px bg-gray-700 hidden sm:block"></div>
+        <span class="text-gray-500 text-xs hidden sm:flex items-center gap-1.5">
+          Room
+          <code id="roomId" class="bg-brand/10 border border-brand/20 px-2 py-0.5 rounded text-[11px] font-mono text-red-300"></code>
+        </span>
+      </div>
+
+      <!-- Right: action buttons -->
+      <div class="flex items-center gap-1.5">
+        <button id="copyLink" title="Copy invite link"
+                class="flex items-center gap-1.5 border border-gray-700 hover:border-gray-500 bg-transparent hover:bg-white/[0.06] text-gray-400 hover:text-white text-xs px-3 py-1.5 rounded-md transition-all duration-150">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+          <span class="hidden sm:inline">Copy link</span>
+        </button>
+        <a href="/" title="Leave this room"
+           class="flex items-center gap-1.5 border border-gray-700 hover:border-red-800 bg-transparent hover:bg-red-900/30 text-gray-400 hover:text-red-400 text-xs px-3 py-1.5 rounded-md transition-all duration-150 no-underline">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          <span class="hidden sm:inline">Leave</span>
+        </a>
+        <div class="w-px h-4 bg-gray-700 mx-0.5"></div>
+        <button id="themeToggle" type="button" title="Toggle light/dark mode"
+                class="flex items-center border border-gray-700 hover:border-gray-500 bg-transparent hover:bg-white/[0.06] text-gray-400 hover:text-white p-1.5 rounded-md transition-all duration-150">
+          <svg id="iconSun" class="w-3.5 h-3.5 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+          <svg id="iconMoon" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+        </button>
+      </div>
     </div>
-    <div class="room-meta">
-      <span>room <code id="roomId"></code></span>
-      <button id="copyLink" class="secondary small">copy link</button>
+
+    <!-- Bottom row: source picker (merged pill, centered) -->
+    <div class="flex items-center justify-center px-5 py-2 bg-[#0c0c0c] border-b border-white/[0.06]">
+      <div class="source-picker flex items-center w-full max-w-2xl bg-[#1a1a1a] border border-gray-700 rounded-lg overflow-hidden focus-within:border-white/30 transition-colors">
+        <select id="sourceType"
+                class="bg-transparent border-0 border-r border-gray-700 text-gray-300 text-xs px-3 py-2.5 w-40 shrink-0 focus:outline-none cursor-pointer appearance-none"
+                style="background-image: url('data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2212%22 height=%2212%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%23888%22 stroke-width=%222%22><polyline points=%226 9 12 15 18 9%22/></svg>'); background-repeat: no-repeat; background-position: right 8px center;">
+          <option value="youtube">YouTube</option>
+          <option value="url">Direct URL</option>
+          <option value="extension">Extension</option>
+        </select>
+        <input id="sourceValue" placeholder="paste a link or video URL..." autocomplete="off"
+               class="flex-1 min-w-0 bg-transparent border-0 text-white text-sm px-3 py-2.5 placeholder:text-gray-600 focus:outline-none">
+        <button id="loadSource"
+                class="bg-brand hover:bg-brand-hover text-white text-xs font-bold px-6 py-2 m-1 rounded transition-all duration-150 hover:shadow-lg hover:shadow-brand/25 shrink-0 active:scale-95">
+          Load
+        </button>
+      </div>
     </div>
   </header>
 
-  <main>
-    <section class="player-area">
-      <div id="player-empty" class="empty">
-        <h2>No video loaded</h2>
-        <p>Paste a YouTube link or a direct video URL above and hit <strong>Load</strong>.</p>
-        <p class="hint">For sites like fsharetv.com, choose <strong>Extension</strong>, install the <code>watchparty/extension</code> folder as an unpacked Chrome extension, and paste your room code into the extension popup.</p>
+  <!-- Main content -->
+  <main class="flex flex-1 min-h-0">
+    <!-- Player area -->
+    <section class="player-area flex-1 bg-black relative flex items-center justify-center min-w-0">
+      <!-- Empty state: two cards side by side -->
+      <div id="player-empty" class="empty flex items-stretch gap-5 px-8 max-w-3xl w-full animate-fade-in">
+        <!-- Card 1: Video -->
+        <div class="flex-1 bg-[#141414] border border-gray-800 rounded-xl overflow-hidden text-center">
+          <div class="h-[3px] bg-brand"></div>
+          <div class="px-8 py-10">
+            <div class="mx-auto w-14 h-14 rounded-full bg-white/[0.05] flex items-center justify-center mb-5">
+              <svg class="w-7 h-7 text-brand" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            </div>
+            <h2 class="text-white text-[1.3rem] font-bold mb-3">No video loaded</h2>
+            <p class="text-sm leading-relaxed text-gray-400 mb-3">Paste a YouTube link or direct video URL above and hit <strong class="text-white font-medium">Load</strong>.</p>
+            <p class="text-xs text-gray-600">Supports YouTube, .mp4, .m3u8, and any site via the browser extension.</p>
+          </div>
+        </div>
+        <!-- Card 2: Extension -->
+        <div class="flex-1 bg-[#141414] border border-gray-800 rounded-xl overflow-hidden text-center">
+          <div class="h-[3px] bg-brand"></div>
+          <div class="px-8 py-10">
+            <div class="mx-auto w-14 h-14 rounded-full bg-white/[0.05] flex items-center justify-center mb-5">
+              <svg class="w-7 h-7 text-brand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a4 4 0 00-8 0v2"/><circle cx="12" cy="15" r="1"/></svg>
+            </div>
+            <h2 class="text-white text-[1.3rem] font-bold mb-3">Extension mode</h2>
+            <p id="ext-status" class="text-sm text-gray-400 mb-3">Stream from any website in sync with your room.</p>
+            <p class="text-xs text-gray-600">Install the <code class="bg-white/5 px-1.5 py-0.5 rounded text-[11px] text-gray-400">extension</code> folder as an unpacked Chrome extension, then paste your room code.</p>
+          </div>
+        </div>
       </div>
       <div id="yt-wrap"><div id="yt-player"></div></div>
       <video id="native-player" controls playsinline></video>
-      <div id="ext-info" class="empty">
-        <h2>Extension mode</h2>
-        <p id="ext-status">Waiting for the browser extension to connect…</p>
-        <p class="hint">Open the streaming site in another tab with the extension installed and your room code set. Anyone in this room sees the same playback state in real time.</p>
+      <div id="ext-info" class="empty text-gray-500 text-center px-10 max-w-md hidden">
+        <h2 class="text-white text-[1.4rem] font-bold mb-4 mt-0">Extension mode</h2>
+        <p class="text-sm text-gray-400 mb-4">Waiting for the browser extension to connect...</p>
       </div>
     </section>
 
-    <aside class="sidebar">
-      <div class="members">
-        <h3>Watching</h3>
-        <ul id="members"></ul>
+    <!-- Sidebar -->
+    <aside class="sidebar w-80 border-l border-gray-800 flex flex-col min-h-0 shrink-0 bg-[#0c0c0c]">
+
+      <!-- Watching -->
+      <div class="px-4 pt-4 pb-3 border-b border-gray-800">
+        <h3 class="text-[10px] uppercase tracking-wider text-gray-500 mb-2.5 font-semibold flex items-center gap-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-green-500 inline-block"></span>
+          Watching
+        </h3>
+        <ul id="members" class="flex flex-wrap gap-1.5 list-none p-0 m-0"></ul>
       </div>
-      <div class="call">
-        <button id="joinCallBtn" type="button">Join voice + video</button>
+      <!-- Hidden name input (shown inline when editing) -->
+      <input id="myName" type="hidden" maxlength="24" autocomplete="off">
+      <button id="saveName" type="button" class="hidden"></button>
+
+      <!-- Call -->
+      <div class="px-4 py-3 border-b border-gray-800 flex flex-col gap-2">
+        <button id="joinCallBtn" type="button"
+                class="w-full bg-brand hover:bg-brand-hover text-white font-bold py-2.5 px-4 rounded text-[13px] border-0 cursor-pointer transition-all duration-150 active:scale-[0.98]">
+          Join voice + video
+        </button>
         <div id="callControls" class="call-controls">
           <div class="call-row">
-            <button id="micBtn" type="button" class="control" title="Toggle mic">Mic</button>
-            <button id="camBtn" type="button" class="control" title="Toggle camera">Cam</button>
-            <button id="filterBtn" type="button" class="control" title="Cycle beauty filter">Filter</button>
+            <button id="micBtn" type="button" class="control icon-btn" title="Toggle mic">
+              <svg class="ic ic-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="1" width="6" height="11" rx="3"/><path d="M19 10v1a7 7 0 01-14 0v-1"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+              <svg class="ic ic-mic-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 005.12 2.12M15 9.34V4a3 3 0 00-5.94-.6"/><path d="M17 16.95A7 7 0 015 12v-2m14 0v2c0 .76-.13 1.49-.35 2.17"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+            </button>
+            <button id="camBtn" type="button" class="control icon-btn" title="Toggle camera">
+              <svg class="ic ic-cam" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+              <svg class="ic ic-cam-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 16v1a2 2 0 01-2 2H3a2 2 0 01-2-2V7a2 2 0 012-2h2m5.66 0H14a2 2 0 012 2v3.34l1 1L23 7v10"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+            </button>
+            <button id="filterBtn" type="button" class="control icon-btn" title="Cycle beauty filter">
+              <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+              <span class="filter-label">Filter</span>
+            </button>
           </div>
-          <button id="leaveCallBtn" type="button" class="control full danger">Leave call</button>
+          <button id="leaveCallBtn" type="button" class="control full danger">
+            <svg class="ic inline-block -mt-px mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.68 13.31a16 16 0 003.41 2.6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7 2 2 0 011.72 2v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.42 19.42 0 01-6-6A19.79 19.79 0 011.12 5.18 2 2 0 013.1 3h3a2 2 0 012 1.72c.12.96.36 1.9.7 2.81a2 2 0 01-.45 2.11L7.09 10.91a16 16 0 003.59 2.4z"/><line x1="23" y1="1" x2="17" y2="7"/><line x1="17" y1="1" x2="23" y2="7"/></svg>
+            Leave
+          </button>
         </div>
-        <div id="video-grid"></div>
+        <div id="video-grid" class="grid grid-cols-2 gap-1.5 max-h-64 overflow-y-auto empty:hidden"></div>
       </div>
-      <div class="chat">
-        <div id="chat-log"></div>
-        <form id="chat-form">
-          <input id="chat-input" placeholder="say something…" maxlength="500" autocomplete="off">
+
+      <!-- Chat -->
+      <div class="flex-1 flex flex-col min-h-0">
+        <div id="chat-log" class="chat-log flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-2"></div>
+        <form id="chat-form" class="px-3 py-3 border-t border-gray-700 bg-[#0a0a0a]">
+          <input id="chat-input" placeholder="say something..." maxlength="500" autocomplete="off"
+                 class="w-full bg-[#1a1a1a] border border-gray-700 text-white rounded-full px-4 py-2.5 text-sm placeholder:text-gray-600 focus:outline-none focus:border-white focus:ring-1 focus:ring-white/20 transition-all duration-200">
         </form>
       </div>
     </aside>
