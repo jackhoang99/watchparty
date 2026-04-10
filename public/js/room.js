@@ -140,13 +140,66 @@ function loadYoutube(value, playback) {
 
 function loadUrl(url) {
   if (hls) { try { hls.destroy(); } catch {} hls = null; }
+  hideVideoError();
   if (/\.m3u8(\?|$)/i.test(url) && window.Hls && Hls.isSupported()) {
     hls = new Hls();
+    hls.on(Hls.Events.ERROR, (event, data) => {
+      if (data.fatal) showVideoError(url);
+    });
     hls.loadSource(url);
     hls.attachMedia(nativeEl);
   } else {
     nativeEl.src = url;
   }
+}
+
+// Error overlay for restricted video URLs
+nativeEl.addEventListener('error', () => {
+  if (activeMode === 'url' && nativeEl.src) showVideoError(nativeEl.src);
+});
+
+function showVideoError(url) {
+  let overlay = document.getElementById('video-error');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'video-error';
+    overlay.style.cssText = 'position:absolute;inset:0;z-index:5;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.9);';
+    document.querySelector('.player-area').appendChild(overlay);
+  }
+  overlay.innerHTML = `
+    <div style="text-align:center;max-width:440px;padding:32px;">
+      <div style="font-size:36px;margin-bottom:16px;">&#128274;</div>
+      <h3 style="color:#fff;font-size:18px;font-weight:700;margin:0 0 10px;">This site blocks external playback</h3>
+      <p style="color:#aaa;font-size:13px;line-height:1.6;margin:0 0 20px;">
+        The video can't be loaded here because the streaming site restricts playback to their own domain.
+        Use <strong style="color:#fff;">Sync Mode</strong> instead — everyone watches on the original site while the extension keeps you all at the same timestamp.
+      </p>
+
+      <div style="background:#141414;border:1px solid #333;border-radius:12px;padding:20px;text-align:left;margin-bottom:16px;">
+        <div style="font-size:11px;color:#e50914;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;">How Sync Mode works</div>
+        <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px;">
+          <span style="background:#1a1a1a;border:1px solid #333;color:#e50914;font-size:10px;font-weight:700;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">1</span>
+          <span style="font-size:12px;color:#ccc;line-height:1.4;">Everyone installs the <strong style="color:#fff;">watchparty extension</strong> and connects to this room</span>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px;">
+          <span style="background:#1a1a1a;border:1px solid #333;color:#e50914;font-size:10px;font-weight:700;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">2</span>
+          <span style="font-size:12px;color:#ccc;line-height:1.4;">Everyone opens the <strong style="color:#fff;">same movie page</strong> on the streaming site in their own browser</span>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:10px;">
+          <span style="background:#1a1a1a;border:1px solid #333;color:#e50914;font-size:10px;font-weight:700;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">3</span>
+          <span style="font-size:12px;color:#ccc;line-height:1.4;">Play, pause, or seek — the extension <strong style="color:#fff;">syncs everyone automatically</strong> in real time</span>
+        </div>
+      </div>
+
+      <p style="color:#666;font-size:10px;margin:0;">Keep this room open for chat and video calls while watching</p>
+    </div>
+  `;
+  overlay.style.display = 'flex';
+}
+
+function hideVideoError() {
+  const overlay = document.getElementById('video-error');
+  if (overlay) overlay.style.display = 'none';
 }
 
 // ---------- native video event hooks ----------
@@ -210,6 +263,13 @@ function updateEmptyCards() {
   const type = $('#sourceType').value;
   if (cardVideo) cardVideo.style.display = type === 'extension' ? 'none' : '';
   if (cardExtension) cardExtension.style.display = type === 'extension' ? '' : 'none';
+  // When switching to extension mode, show the empty state and hide any errors/players
+  if (type === 'extension' && !activeMode) {
+    hideVideoError();
+    emptyEl.style.display = 'flex';
+    ytWrap.style.display = 'none';
+    nativeEl.style.display = 'none';
+  }
 }
 $('#sourceType').addEventListener('change', updateEmptyCards);
 updateEmptyCards(); // set initial state
@@ -317,6 +377,7 @@ function renderMembers(members) {
 
 socket.on('source:change', (source) => applySource(source, null));
 function applySource(source, playback) {
+  hideVideoError();
   setMode(source.type);
   if (source.type === 'youtube') loadYoutube(source.value, playback);
   else if (source.type === 'url') loadUrl(source.value);

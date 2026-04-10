@@ -200,32 +200,70 @@
         </div>
 
         <!-- Extension mode card -->
-        <div id="card-extension" class="bg-[#141414] border border-gray-800 rounded-xl overflow-hidden text-center max-w-lg w-full" style="display:none">
+        <div id="card-extension" class="bg-[#141414] border border-gray-800 rounded-xl overflow-hidden text-center max-w-xl w-full" style="display:none">
           <div class="h-[3px] bg-brand"></div>
-          <div class="px-10 py-10">
-            <div class="mx-auto w-16 h-16 rounded-full bg-white/[0.05] flex items-center justify-center mb-6">
-              <svg class="w-8 h-8 text-brand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a4 4 0 00-8 0v2"/><circle cx="12" cy="15" r="1"/></svg>
-            </div>
-            <h2 class="text-white text-[1.4rem] font-bold mb-2">Stream from any site</h2>
-            <p class="text-sm text-gray-400 mb-6">Search and pick a movie directly from your streaming site</p>
+          <div class="px-8 py-8">
 
-            <div class="text-left max-w-sm mx-auto space-y-3">
-              <div class="flex items-start gap-3">
-                <span class="shrink-0 w-6 h-6 rounded-full bg-brand/10 border border-brand/20 flex items-center justify-center text-[11px] font-bold text-brand">1</span>
-                <p class="text-sm text-gray-300 leading-snug">Install the watchparty extension and go to your streaming site (fshare, etc.)</p>
+            <!-- Install section -->
+            <div class="mb-6">
+              <div class="mx-auto w-14 h-14 rounded-full bg-brand/10 flex items-center justify-center mb-4">
+                <svg class="w-7 h-7 text-brand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               </div>
-              <div class="flex items-start gap-3">
-                <span class="shrink-0 w-6 h-6 rounded-full bg-brand/10 border border-brand/20 flex items-center justify-center text-[11px] font-bold text-brand">2</span>
-                <p class="text-sm text-gray-300 leading-snug">Click the extension icon, connect to this room, then use <strong class="text-white">Find movies</strong> to search the site</p>
-              </div>
-              <div class="flex items-start gap-3">
-                <span class="shrink-0 w-6 h-6 rounded-full bg-brand/10 border border-brand/20 flex items-center justify-center text-[11px] font-bold text-brand">3</span>
-                <p class="text-sm text-gray-300 leading-snug">Pick a movie, play it, then click the red <strong class="text-brand">Watch in party</strong> button — it loads for everyone in the room</p>
-              </div>
+              <h2 class="text-white text-[1.3rem] font-bold mb-2">Install the watchparty extension</h2>
+              <p class="text-sm text-gray-400 mb-4">Required to sync playback on streaming sites</p>
             </div>
 
-            <div class="mt-6 pt-5 border-t border-gray-800">
-              <p class="text-xs text-gray-600">Your friends only need the room link — no extension or site access required</p>
+            <!-- Step-by-step install -->
+            <div class="text-left max-w-md mx-auto bg-[#0c0c0c] border border-gray-800 rounded-lg p-5 mb-6">
+              <div class="text-[10px] text-brand font-bold uppercase tracking-wider mb-4">Installation steps</div>
+              <div class="space-y-4">
+                <div class="flex items-start gap-3">
+                  <span class="shrink-0 w-6 h-6 rounded-full bg-brand/10 border border-brand/20 flex items-center justify-center text-[11px] font-bold text-brand mt-0.5">1</span>
+                  <div>
+                    <p class="text-sm text-gray-200 leading-snug font-medium mb-1">Download the extension</p>
+                    <a href="/extension" target="_blank" class="inline-flex items-center gap-1.5 bg-brand hover:bg-brand-hover text-white text-xs font-bold px-4 py-2 rounded transition-all no-underline">
+                      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                      Open extension files
+                    </a>
+                  </div>
+                </div>
+                <div class="flex items-start gap-3">
+                  <span class="shrink-0 w-6 h-6 rounded-full bg-brand/10 border border-brand/20 flex items-center justify-center text-[11px] font-bold text-brand mt-0.5">2</span>
+                  <div>
+                    <p class="text-sm text-gray-200 leading-snug font-medium">Open Chrome extensions page</p>
+                    <p class="text-xs text-gray-500 mt-1">Go to <code class="bg-white/5 px-1.5 py-0.5 rounded text-[11px] text-gray-400">chrome://extensions</code> and enable <strong class="text-gray-300">Developer mode</strong> (top right toggle)</p>
+                  </div>
+                </div>
+                <div class="flex items-start gap-3">
+                  <span class="shrink-0 w-6 h-6 rounded-full bg-brand/10 border border-brand/20 flex items-center justify-center text-[11px] font-bold text-brand mt-0.5">3</span>
+                  <div>
+                    <p class="text-sm text-gray-200 leading-snug font-medium">Load the extension</p>
+                    <p class="text-xs text-gray-500 mt-1">Click <strong class="text-gray-300">Load unpacked</strong> and select the <code class="bg-white/5 px-1.5 py-0.5 rounded text-[11px] text-gray-400">extension</code> folder from the project</p>
+                  </div>
+                </div>
+                <div class="flex items-start gap-3">
+                  <span class="shrink-0 w-6 h-6 rounded-full bg-brand/10 border border-brand/20 flex items-center justify-center text-[11px] font-bold text-brand mt-0.5">4</span>
+                  <div>
+                    <p class="text-sm text-gray-200 leading-snug font-medium">Connect to this room</p>
+                    <p class="text-xs text-gray-500 mt-1">Click the watchparty icon in your toolbar — it auto-fills your room code. Click <strong class="text-gray-300">Connect</strong>.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- How to use after install -->
+            <div class="text-left max-w-md mx-auto">
+              <div class="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-3">After installing</div>
+              <div class="grid grid-cols-2 gap-3">
+                <div class="bg-[#0c0c0c] border border-gray-800 rounded-lg p-4">
+                  <div class="text-xs text-brand font-bold mb-1">YouTube / Direct URLs</div>
+                  <p class="text-[11px] text-gray-500 leading-relaxed">Send a video from the extension popup — everyone watches it here in the room</p>
+                </div>
+                <div class="bg-[#0c0c0c] border border-gray-800 rounded-lg p-4">
+                  <div class="text-xs text-brand font-bold mb-1">Fshare / Netflix / etc.</div>
+                  <p class="text-[11px] text-gray-500 leading-relaxed">Everyone opens the same movie — the extension syncs play/pause/seek automatically</p>
+                </div>
+              </div>
             </div>
           </div>
         </div>

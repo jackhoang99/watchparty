@@ -9,6 +9,9 @@
   }
   if (!isAlive()) return;
 
+  // Don't run on watchparty room pages
+  if (/\/r\/[A-Za-z0-9]/.test(location.pathname)) return;
+
   // Safe wrapper for chrome.runtime.sendMessage
   function safeSend(msg) {
     if (!isAlive()) return Promise.reject('dead');

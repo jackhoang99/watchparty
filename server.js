@@ -112,6 +112,9 @@ function maybeReap(roomId) {
 }
 
 // ---------- HTTP routes ----------
+// Serve extension folder for download
+app.use('/extension', express.static(path.join(__dirname, 'extension')));
+
 app.post('/api/rooms', (req, res) => {
   const id = nanoid(8);
   getOrCreateRoom(id);
