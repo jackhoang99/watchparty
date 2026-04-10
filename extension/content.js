@@ -118,6 +118,31 @@
     }, 2000);
   }
 
+  // --- Auto-send: if popup navigated us here, auto-send once video is found ---
+  let autoSendDone = false;
+
+  function tryAutoSend() {
+    if (autoSendDone) return;
+    const video = document.querySelector('video');
+    if (!video) return;
+    const url = getVideoUrl(video);
+    if (!url) return;
+
+    chrome.storage.local.get('autoSendToRoom', (data) => {
+      if (data.autoSendToRoom && !autoSendDone) {
+        autoSendDone = true;
+        chrome.storage.local.remove('autoSendToRoom');
+        chrome.runtime.sendMessage({
+          type: 'send-to-room',
+          url: url,
+          title: document.title
+        }).then(() => {
+          showFeedback('Sent to room!', true);
+        }).catch(() => {});
+      }
+    });
+  }
+
   // --- Scan for videos and show button when appropriate ---
   function tryShowButton() {
     const video = document.querySelector('video');
@@ -130,6 +155,7 @@
         const url = getVideoUrl(video);
         if (url || capturedUrls.size > 0) {
           createButton();
+          tryAutoSend();
         }
       } else {
         removeButton();

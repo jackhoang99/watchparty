@@ -101,6 +101,8 @@ async function crawlCurrentPage() {
         <button class="movie-go">Watch</button>
       `;
       const go = () => {
+        // Set flag so content script auto-sends the video to room once detected
+        chrome.storage.local.set({ autoSendToRoom: true });
         chrome.tabs.update(tab.id, { url: movie.url });
         window.close();
       };
