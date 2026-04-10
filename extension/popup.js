@@ -160,9 +160,21 @@ async function crawlCurrentPage() {
         const btn = e.target;
         btn.textContent = '...';
         try {
+          const status = await chrome.runtime.sendMessage({ type: 'get-status' });
           await chrome.runtime.sendMessage({ type: 'send-to-room', url: entry.url, title: tab.title || '' });
-          btn.textContent = 'Sent!';
-          btn.style.background = '#22c55e';
+          // Redirect to the watchparty room
+          if (status.serverUrl && status.roomId) {
+            const roomUrl = status.serverUrl.replace(/\/$/, '') + '/r/' + encodeURIComponent(status.roomId);
+            // Find existing room tab or open new one
+            const tabs = await chrome.tabs.query({});
+            const roomTab = tabs.find(t => t.url && t.url.includes('/r/' + status.roomId));
+            if (roomTab) {
+              chrome.tabs.update(roomTab.id, { active: true });
+            } else {
+              chrome.tabs.create({ url: roomUrl });
+            }
+          }
+          window.close();
         } catch {
           btn.textContent = 'Error';
           btn.style.background = '#666';
