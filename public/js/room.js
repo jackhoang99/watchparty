@@ -143,16 +143,19 @@ nativeEl.addEventListener('seeked', () => {
 
 // ---------- broadcast (with debounce) ----------
 let lastBroadcast = 0;
+let latestPlayback = null; // most recent known room playback state, for tab-switch resync
 function broadcastPlayback(state) {
   const now = Date.now();
   if (now - lastBroadcast < 150) return;
   lastBroadcast = now;
   socket.emit('playback:update', state);
+  latestPlayback = { ...state, updatedAt: now };
 }
 
 // ---------- apply remote playback ----------
 function applyPlayback(p) {
   if (!activeMode || activeMode === 'extension') return;
+  latestPlayback = p;
   // YT not ready yet — stash and re-apply once it is (drained from onStateChange)
   if (activeMode === 'youtube' && (!ytReady || !ytPlayer)) {
     pendingPlayback = p;
@@ -596,4 +599,29 @@ $('#filterBtn').onclick = cycleFilter;
 // Clean up on tab close so peers see us leave promptly
 window.addEventListener('beforeunload', () => {
   if (inCall) leaveCall();
+});
+
+// ---------- tab visibility ----------
+// When the tab is hidden, the browser may auto-pause our YouTube player. Without
+// guarding, that auto-pause would broadcast to everyone in the room and stop
+// their video too. So: while hidden, suppress all outgoing playback events; when
+// visible again, resync to whatever the room is currently playing.
+let visibilitySuppressTimer = null;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    suppress = true;
+    if (visibilitySuppressTimer) {
+      clearTimeout(visibilitySuppressTimer);
+      visibilitySuppressTimer = null;
+    }
+  } else {
+    if (latestPlayback && activeMode && activeMode !== 'extension') {
+      applyPlayback(latestPlayback);
+    }
+    if (visibilitySuppressTimer) clearTimeout(visibilitySuppressTimer);
+    visibilitySuppressTimer = setTimeout(() => {
+      suppress = false;
+      visibilitySuppressTimer = null;
+    }, 1200);
+  }
 });
