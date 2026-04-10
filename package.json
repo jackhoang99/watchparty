@@ -1,0 +1,16 @@
+{
+  "name": "watchparty",
+  "version": "0.1.0",
+  "description": "Sync watch party for YouTube, direct video URLs, and any site via a companion browser extension",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "nanoid": "^3.3.7",
+    "socket.io": "^4.8.1",
+    "ws": "^8.18.0"
+  }
+}

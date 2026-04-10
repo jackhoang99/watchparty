@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>watchparty room</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="room">
+  <header>
+    <div class="brand">watchparty</div>
+    <div class="source-picker">
+      <select id="sourceType">
+        <option value="youtube">YouTube</option>
+        <option value="url">Direct video URL (.mp4 / .m3u8)</option>
+        <option value="extension">Extension (any site)</option>
+      </select>
+      <input id="sourceValue" placeholder="paste a YouTube link or video URL" autocomplete="off">
+      <button id="loadSource">Load</button>
+    </div>
+    <div class="room-meta">
+      <span>room <code id="roomId"></code></span>
+      <button id="copyLink" class="secondary small">copy link</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="player-area">
+      <div id="player-empty" class="empty">
+        <h2>No video loaded</h2>
+        <p>Paste a YouTube link or a direct video URL above and hit <strong>Load</strong>.</p>
+        <p class="hint">For sites like fsharetv.com, choose <strong>Extension</strong>, install the <code>watchparty/extension</code> folder as an unpacked Chrome extension, and paste your room code into the extension popup.</p>
+      </div>
+      <div id="yt-wrap"><div id="yt-player"></div></div>
+      <video id="native-player" controls playsinline></video>
+      <div id="ext-info" class="empty">
+        <h2>Extension mode</h2>
+        <p id="ext-status">Waiting for the browser extension to connect…</p>
+        <p class="hint">Open the streaming site in another tab with the extension installed and your room code set. Anyone in this room sees the same playback state in real time.</p>
+      </div>
+    </section>
+
+    <aside class="sidebar">
+      <div class="members">
+        <h3>Watching</h3>
+        <ul id="members"></ul>
+      </div>
+      <div class="chat">
+        <div id="chat-log"></div>
+        <form id="chat-form">
+          <input id="chat-input" placeholder="say something…" maxlength="500" autocomplete="off">
+        </form>
+      </div>
+    </aside>
+  </main>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <script src="/js/room.js"></script>
+</body>
+</html>

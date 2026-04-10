@@ -1,0 +1,42 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      width: 280px; padding: 16px; margin: 0;
+      background: #0b0d12; color: #e6e7eb;
+    }
+    h1 { font-size: 16px; margin: 0 0 14px; font-weight: 700; letter-spacing: -0.3px; }
+    label {
+      display: block; font-size: 11px; color: #8b91a3;
+      margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    input {
+      width: 100%; box-sizing: border-box; padding: 8px 10px;
+      background: #1c2030; border: 1px solid #262b3a; color: #e6e7eb;
+      border-radius: 6px; margin-bottom: 12px; font-size: 13px;
+      font-family: inherit;
+    }
+    input:focus { outline: none; border-color: #6366f1; }
+    button {
+      width: 100%; padding: 9px; background: #6366f1; color: white;
+      border: 0; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500;
+    }
+    button:hover { background: #818cf8; }
+    .status { font-size: 12px; color: #8b91a3; margin-top: 12px; text-align: center; }
+    .status.ok { color: #22c55e; }
+  </style>
+</head>
+<body>
+  <h1>watchparty bridge</h1>
+  <label>Server URL</label>
+  <input id="server" placeholder="http://localhost:3000">
+  <label>Room code</label>
+  <input id="room" placeholder="abc12345">
+  <button id="save">Connect</button>
+  <div class="status" id="status"></div>
+  <script src="popup.js"></script>
+</body>
+</html>
