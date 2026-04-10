@@ -7,8 +7,23 @@ const { nanoid } = require('nanoid');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: '*' } });
-const wss = new WebSocketServer({ server, path: '/bridge' });
+const io = new Server(server, {
+  cors: { origin: '*' },
+  pingInterval: 5000,
+  pingTimeout: 10000
+});
+const wss = new WebSocketServer({ noServer: true });
+
+// Manually route WebSocket upgrades so Socket.IO and ws don't conflict
+server.on('upgrade', (req, socket, head) => {
+  if (req.url === '/bridge') {
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      wss.emit('connection', ws, req);
+    });
+  } else {
+    // Let Socket.IO handle all other upgrades (it listens on /socket.io/)
+  }
+});
 
 const PORT = process.env.PORT || 3000;
 
@@ -46,6 +61,7 @@ function serializeRoom(room) {
     id: room.id,
     members: Array.from(room.members.values()),
     callMembers: Array.from(room.callMembers || []),
+    screenSharer: room.screenSharer || null,
     source: room.source,
     playback: room.playback,
     chat: room.chat
@@ -151,6 +167,30 @@ io.on('connection', (socket) => {
     broadcastPlayback(currentRoomId, room.playback, socket.id);
   });
 
+  // ---------- Screen share signaling ----------
+  socket.on('screen:start', () => {
+    if (!currentRoomId) return;
+    const room = rooms.get(currentRoomId);
+    if (!room) return;
+    room.screenSharer = socket.id;
+    io.to(currentRoomId).emit('screen:started', { id: socket.id });
+  });
+
+  socket.on('screen:stop', () => {
+    if (!currentRoomId) return;
+    const room = rooms.get(currentRoomId);
+    if (!room) return;
+    if (room.screenSharer === socket.id) {
+      room.screenSharer = null;
+      io.to(currentRoomId).emit('screen:stopped', { id: socket.id });
+    }
+  });
+
+  socket.on('screen:signal', ({ to, signal }) => {
+    if (!to || !signal) return;
+    io.to(to).emit('screen:signal', { from: socket.id, signal });
+  });
+
   socket.on('chat:message', (msg) => {
     if (!currentRoomId) return;
     const room = rooms.get(currentRoomId);
@@ -218,6 +258,10 @@ io.on('connection', (socket) => {
     if (room.callMembers && room.callMembers.delete(socket.id)) {
       socket.to(currentRoomId).emit('call:peer-left', { id: socket.id });
       io.to(currentRoomId).emit('call:roster', { members: Array.from(room.callMembers) });
+    }
+    if (room.screenSharer === socket.id) {
+      room.screenSharer = null;
+      socket.to(currentRoomId).emit('screen:stopped', { id: socket.id });
     }
     if (left) socket.to(currentRoomId).emit('room:member', { left });
     maybeReap(currentRoomId);

@@ -199,6 +199,17 @@ function applyPlayback(p) {
 }
 
 // ---------- source picker ----------
+const cardVideo = document.getElementById('card-video');
+const cardExtension = document.getElementById('card-extension');
+
+function updateEmptyCards() {
+  const type = $('#sourceType').value;
+  if (cardVideo) cardVideo.style.display = type === 'extension' ? 'none' : '';
+  if (cardExtension) cardExtension.style.display = type === 'extension' ? '' : 'none';
+}
+$('#sourceType').addEventListener('change', updateEmptyCards);
+updateEmptyCards(); // set initial state
+
 $('#loadSource').onclick = () => {
   const type = $('#sourceType').value;
   const value = $('#sourceValue').value.trim();
@@ -676,9 +687,10 @@ $('#micBtn').onclick = toggleMic;
 $('#camBtn').onclick = toggleCam;
 $('#filterBtn').onclick = cycleFilter;
 
-// Clean up on tab close so peers see us leave promptly
+// Clean up on tab close / refresh so peers see us leave instantly
 window.addEventListener('beforeunload', () => {
   if (inCall) leaveCall();
+  socket.disconnect();
 });
 
 // ---------- tab visibility ----------
@@ -724,4 +736,186 @@ document.addEventListener('visibilitychange', () => {
   applyTheme(localStorage.getItem('wp.theme') === 'light');
 
   toggle.onclick = () => applyTheme(!document.body.classList.contains('light'));
+})();
+
+// ---------- Screen share (tab capture → WebRTC to all peers) ----------
+(function() {
+  const screenPlayer = document.getElementById('screen-player');
+  const sharingBar = document.getElementById('sharing-bar');
+  const sharingText = document.getElementById('sharing-text');
+  const shareTabBtn = document.getElementById('shareTabBtn');
+  const stopShareBtn = document.getElementById('stopShareBtn');
+  if (!shareTabBtn) return;
+
+  let screenStream = null;      // the local captured tab stream (broadcaster only)
+  let isSharing = false;        // am I the broadcaster?
+  let screenPeers = new Map();  // socketId -> RTCPeerConnection (for screen share only)
+  let currentSharer = null;     // socketId of whoever is sharing
+
+  // --- Broadcaster: start sharing ---
+  shareTabBtn.onclick = async () => {
+    try {
+      screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { cursor: 'always' },
+        audio: true
+      });
+    } catch (e) {
+      return; // user cancelled the picker
+    }
+
+    isSharing = true;
+    currentSharer = socket.id;
+    socket.emit('screen:start');
+    showSharingUI(true, true);
+
+    // If the user stops sharing via browser's native "Stop sharing" button
+    screenStream.getVideoTracks()[0].onended = () => stopSharing();
+
+    // Send to all current room members
+    memberCache.forEach(m => {
+      if (m.id !== socket.id) createScreenPeer(m.id, true);
+    });
+  };
+
+  stopShareBtn.onclick = () => stopSharing();
+
+  function stopSharing() {
+    if (!isSharing) return;
+    isSharing = false;
+    currentSharer = null;
+    socket.emit('screen:stop');
+    if (screenStream) {
+      screenStream.getTracks().forEach(t => t.stop());
+      screenStream = null;
+    }
+    for (const [, pc] of screenPeers) { try { pc.close(); } catch {} }
+    screenPeers.clear();
+    showSharingUI(false, false);
+  }
+
+  function createScreenPeer(remoteId, isInitiator) {
+    if (screenPeers.has(remoteId)) {
+      try { screenPeers.get(remoteId).close(); } catch {}
+    }
+    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    screenPeers.set(remoteId, pc);
+
+    // Broadcaster adds screen tracks
+    if (screenStream) {
+      screenStream.getTracks().forEach(track => pc.addTrack(track, screenStream));
+    }
+
+    pc.onicecandidate = (e) => {
+      if (e.candidate) {
+        socket.emit('screen:signal', { to: remoteId, signal: { type: 'ice', candidate: e.candidate } });
+      }
+    };
+
+    // Viewer receives the stream
+    pc.ontrack = (e) => {
+      screenPlayer.srcObject = e.streams[0];
+      showSharingUI(true, false);
+    };
+
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+        screenPeers.delete(remoteId);
+      }
+    };
+
+    if (isInitiator) {
+      (async () => {
+        try {
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          socket.emit('screen:signal', { to: remoteId, signal: { type: 'offer', sdp: pc.localDescription } });
+        } catch (err) {
+          console.warn('screen offer failed', err);
+        }
+      })();
+    }
+
+    return pc;
+  }
+
+  // --- Signaling ---
+  socket.on('screen:signal', async ({ from, signal }) => {
+    let pc = screenPeers.get(from);
+    if (!pc) pc = createScreenPeer(from, false);
+    try {
+      if (signal.type === 'offer') {
+        await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        socket.emit('screen:signal', { to: from, signal: { type: 'answer', sdp: pc.localDescription } });
+      } else if (signal.type === 'answer') {
+        await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+      } else if (signal.type === 'ice') {
+        await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+      }
+    } catch (err) {
+      console.warn('screen signal error', err);
+    }
+  });
+
+  socket.on('screen:started', ({ id }) => {
+    currentSharer = id;
+    if (id === socket.id) return; // I started it, already handled
+    // Viewer: wait for the offer from the sharer
+    const name = memberCache.find(m => m.id === id)?.name || 'Someone';
+    sharingText.textContent = name + ' is sharing their screen';
+  });
+
+  socket.on('screen:stopped', ({ id }) => {
+    if (id === currentSharer || id === socket.id) {
+      currentSharer = null;
+      // Clean up viewer state
+      for (const [, pc] of screenPeers) { try { pc.close(); } catch {} }
+      screenPeers.clear();
+      screenPlayer.srcObject = null;
+      showSharingUI(false, false);
+    }
+  });
+
+  // When a new member joins while someone is sharing, the sharer initiates to them
+  socket.on('room:member', ({ joined }) => {
+    if (joined && isSharing && joined.id !== socket.id) {
+      createScreenPeer(joined.id, true);
+    }
+  });
+
+  // Late joiner: if room already has a sharer, the sharer will initiate on seeing our join
+  // But the sharer learns about us via room:member. We need the SHARER to initiate.
+  // So we also handle: if we join and room has screenSharer, request connection
+  socket.on('room:state', (room) => {
+    if (room.screenSharer && room.screenSharer !== socket.id) {
+      currentSharer = room.screenSharer;
+      const name = room.members.find(m => m.id === room.screenSharer)?.name || 'Someone';
+      sharingText.textContent = name + ' is sharing their screen';
+      // The sharer will initiate to us when they see our room:member event
+    }
+  });
+
+  // --- UI ---
+  function showSharingUI(active, isBroadcaster) {
+    if (active) {
+      // Hide other players, show screen player
+      emptyEl.style.display = 'none';
+      ytWrap.style.display = 'none';
+      nativeEl.style.display = 'none';
+      extInfoEl.style.display = 'none';
+      screenPlayer.style.display = 'block';
+      sharingBar.style.display = 'flex';
+      stopShareBtn.style.display = isBroadcaster ? '' : 'none';
+      shareTabBtn.style.display = 'none';
+    } else {
+      screenPlayer.style.display = 'none';
+      sharingBar.style.display = 'none';
+      shareTabBtn.style.display = '';
+      // Restore appropriate player view
+      if (!activeMode) {
+        emptyEl.style.display = 'flex';
+      }
+    }
+  }
 })();

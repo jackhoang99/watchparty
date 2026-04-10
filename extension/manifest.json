@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Watchparty Bridge",
-  "version": "0.1.0",
-  "description": "Sync video playback on any website with your watchparty room.",
+  "name": "watchparty",
+  "version": "1.0.0",
+  "description": "Sync video playback on any website with your watchparty room. Watch together, stay close.",
   "permissions": ["storage", "tabs"],
   "host_permissions": ["<all_urls>"],
   "background": {
@@ -18,6 +18,6 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Watchparty"
+    "default_title": "watchparty"
   }
 }

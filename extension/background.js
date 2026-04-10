@@ -33,7 +33,9 @@ async function connect() {
 
   ws.onopen = () => {
     log('ws open');
-    ws.send(JSON.stringify({ type: 'join', roomId }));
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'join', roomId }));
+    }
   };
 
   ws.onmessage = (e) => {
@@ -82,6 +84,14 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
       roomId: msg.roomId,
       serverUrl: msg.serverUrl || 'http://localhost:3000'
     }).then(connect);
+  } else if (msg.type === 'disconnect') {
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    try { if (ws) ws.close(); } catch {}
+    ws = null;
+    roomId = null;
+    serverUrl = '';
+    chrome.storage.local.remove(['roomId', 'serverUrl']);
+    return Promise.resolve({ ok: true });
   } else if (msg.type === 'get-status') {
     return Promise.resolve({
       connected: !!(ws && ws.readyState === WebSocket.OPEN),
