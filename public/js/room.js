@@ -438,18 +438,17 @@ $('#chat-form').onsubmit = (e) => {
 };
 
 // ---------- WebRTC voice + video call ----------
-// ICE servers — fetched from server (includes Cloudflare TURN if configured)
+// ICE servers — fetched from server (includes TURN if configured)
 let ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
 fetch('/api/turn').then(r => r.json()).then(servers => {
   if (Array.isArray(servers) && servers.length) ICE_SERVERS = servers;
 }).catch(() => {});
 
-let localStream = null;       // what we send to peers (canvas-processed when video is on)
-let rawStream = null;         // what getUserMedia gave us (real camera + mic)
+let localStream = null;
+let rawStream = null;
 let inCall = false;
-const peers = new Map();      // remoteSocketId -> RTCPeerConnection
+const peers = new Map();
 
-// Beauty filter pipeline (canvas-based, applies to outgoing video)
 const FILTERS = [
   { name: 'Filter', css: 'none' },
   { name: 'Soft',   css: 'blur(0.6px) brightness(1.06) contrast(0.96) saturate(1.08)' },
@@ -476,7 +475,6 @@ async function joinCall() {
       video: { width: { ideal: 320 }, height: { ideal: 240 } }
     });
   } catch (err) {
-    // Camera blocked or absent — fall back to audio-only
     try {
       rawStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (e) {
@@ -511,18 +509,10 @@ function leaveCall() {
   updateCallUI();
 }
 
-// When no filter is active, use the raw camera stream directly (no canvas).
-// This prevents freezing when the tab goes to background (rAF gets throttled).
-// Canvas pipeline is only created when a beauty filter is activated.
+// Canvas pipeline for beauty filters
 function setupProcessedStream(source) {
-  // No filter — just pass through the raw stream
-  return source;
-}
-
-function startCanvasPipeline() {
-  if (!rawStream) return;
-  const videoTrack = rawStream.getVideoTracks()[0];
-  if (!videoTrack) return;
+  const videoTrack = source.getVideoTracks()[0];
+  if (!videoTrack) return source;
 
   processCanvas = document.createElement('canvas');
   processCtx = processCanvas.getContext('2d');
@@ -562,43 +552,10 @@ function startCanvasPipeline() {
   draw();
 
   const canvasStream = processCanvas.captureStream(30);
-  localStream = new MediaStream();
-  canvasStream.getVideoTracks().forEach(t => localStream.addTrack(t));
-  rawStream.getAudioTracks().forEach(t => localStream.addTrack(t));
-
-  // Replace the video track in all active peer connections
-  const newVideoTrack = localStream.getVideoTracks()[0];
-  for (const [, pc] of peers) {
-    const sender = pc.getSenders().find(s => s.track?.kind === 'video');
-    if (sender && newVideoTrack) sender.replaceTrack(newVideoTrack).catch(() => {});
-  }
-
-  // Update local tile
-  const localTile = document.getElementById('tile-local');
-  if (localTile) {
-    const vid = localTile.querySelector('video');
-    if (vid) vid.srcObject = localStream;
-  }
-}
-
-function stopCanvasPipeline() {
-  teardownProcessedStream();
-  if (!rawStream) return;
-
-  localStream = rawStream;
-
-  // Replace tracks back to raw
-  const rawVideoTrack = rawStream.getVideoTracks()[0];
-  for (const [, pc] of peers) {
-    const sender = pc.getSenders().find(s => s.track?.kind === 'video');
-    if (sender && rawVideoTrack) sender.replaceTrack(rawVideoTrack).catch(() => {});
-  }
-
-  const localTile = document.getElementById('tile-local');
-  if (localTile) {
-    const vid = localTile.querySelector('video');
-    if (vid) vid.srcObject = localStream;
-  }
+  const out = new MediaStream();
+  canvasStream.getVideoTracks().forEach(t => out.addTrack(t));
+  source.getAudioTracks().forEach(t => out.addTrack(t));
+  return out;
 }
 
 function teardownProcessedStream() {
@@ -620,14 +577,6 @@ function cycleFilter() {
   const label = $('#filterBtn .filter-label');
   if (label) label.textContent = f.name;
   $('#filterBtn').classList.toggle('on', filterIdx !== 0);
-
-  // Start or stop canvas pipeline based on filter
-  if (filterIdx === 0) {
-    stopCanvasPipeline();
-  } else if (!processCanvas) {
-    startCanvasPipeline();
-  }
-  // If canvas is already running, the draw loop picks up the new filterIdx automatically
 }
 
 function createPeer(remoteId, isInitiator) {
@@ -677,26 +626,17 @@ function createPeer(remoteId, isInitiator) {
 }
 
 socket.on('call:peer-joined', ({ id }) => {
-  if (id === socket.id) return;
-  // If I'm in the call, initiate a full connection (send + receive)
-  // If I'm just a viewer, the caller will initiate to me — I'll accept via webrtc:signal
-  if (inCall) {
-    createPeer(id, true);
-  }
-  // Show their tile placeholder
+  if (!inCall || id === socket.id) return;
+  createPeer(id, true);
 });
 
-// Roster: connect to any call members we don't have connections with
 socket.on('call:roster', ({ members }) => {
+  if (!inCall) return;
   for (const id of members) {
     if (id === socket.id || peers.has(id)) continue;
-    if (inCall) {
-      // I'm in call — initiate to them
-      setTimeout(() => {
-        if (!peers.has(id) && inCall) createPeer(id, true);
-      }, 2000);
-    }
-    // Viewers: the call member will initiate to us when they see us in room:member
+    setTimeout(() => {
+      if (!peers.has(id) && inCall) createPeer(id, true);
+    }, 2000);
   }
 });
 
@@ -708,10 +648,9 @@ socket.on('call:peer-left', ({ id }) => {
 });
 
 socket.on('webrtc:signal', async ({ from, signal }) => {
-  // Accept signals even as a viewer (receive-only) — don't require inCall
+  if (!inCall) return;
   let pc = peers.get(from);
   if (!pc) {
-    // Receiving an offer from a peer we don't yet know about — answer side
     pc = createPeer(from, false);
   }
   try {
