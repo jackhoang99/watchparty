@@ -23,22 +23,22 @@ async function connect() {
   const wsUrl = serverUrl.replace(/^http/, 'ws').replace(/\/$/, '') + '/bridge';
   log('connecting to', wsUrl, 'room', roomId);
 
+  let socket;
   try {
-    ws = new WebSocket(wsUrl);
+    socket = new WebSocket(wsUrl);
   } catch (err) {
     log('ws construct failed', err);
     scheduleReconnect();
     return;
   }
+  ws = socket;
 
-  ws.onopen = () => {
+  socket.onopen = () => {
     log('ws open');
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'join', roomId }));
-    }
+    try { socket.send(JSON.stringify({ type: 'join', roomId })); } catch {}
   };
 
-  ws.onmessage = (e) => {
+  socket.onmessage = (e) => {
     let msg;
     try { msg = JSON.parse(e.data); } catch { return; }
     if (msg.type === 'playback') {
@@ -51,8 +51,12 @@ async function connect() {
     }
   };
 
-  ws.onclose = () => { log('ws close'); ws = null; scheduleReconnect(); };
-  ws.onerror = (err) => { log('ws error', err); };
+  socket.onclose = () => {
+    log('ws close');
+    if (ws === socket) ws = null;
+    scheduleReconnect();
+  };
+  socket.onerror = (err) => { log('ws error', err); };
 }
 
 function scheduleReconnect() {
