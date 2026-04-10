@@ -181,9 +181,6 @@ app.get('/api/turn', async (req, res) => {
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' }
   ]);
-  } catch {
-    res.json([{ urls: 'stun:stun.l.google.com:19302' }]);
-  }
 });
 
 // Serve extension folder for download
