@@ -51,10 +51,10 @@ window.onYouTubeIframeAPIReady = () => {
 // ---------- mode switching ----------
 function setMode(mode) {
   activeMode = mode;
-  emptyEl.style.display = mode ? 'none' : '';
-  ytWrap.style.display = mode === 'youtube' ? '' : 'none';
-  nativeEl.style.display = mode === 'url' ? '' : 'none';
-  extInfoEl.style.display = mode === 'extension' ? '' : 'none';
+  emptyEl.style.display = mode ? 'none' : 'block';
+  ytWrap.style.display = mode === 'youtube' ? 'block' : 'none';
+  nativeEl.style.display = mode === 'url' ? 'block' : 'none';
+  extInfoEl.style.display = mode === 'extension' ? 'block' : 'none';
 }
 
 function extractYoutubeId(url) {
