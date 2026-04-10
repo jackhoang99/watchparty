@@ -313,7 +313,13 @@ socket.on('room:state', (room) => {
 });
 
 socket.on('room:member', ({ joined, left }) => {
-  if (joined) memberCache.push(joined);
+  if (joined) {
+    memberCache.push(joined);
+    // If I'm in a call, initiate a connection to the new member so they can see my webcam
+    if (inCall && joined.id !== socket.id && !peers.has(joined.id)) {
+      createPeer(joined.id, true);
+    }
+  }
   if (left) memberCache = memberCache.filter(m => m.id !== left.id);
   renderMembers(memberCache);
 });
@@ -671,19 +677,26 @@ function createPeer(remoteId, isInitiator) {
 }
 
 socket.on('call:peer-joined', ({ id }) => {
-  if (!inCall || id === socket.id) return;
-  createPeer(id, true);
+  if (id === socket.id) return;
+  // If I'm in the call, initiate a full connection (send + receive)
+  // If I'm just a viewer, the caller will initiate to me — I'll accept via webrtc:signal
+  if (inCall) {
+    createPeer(id, true);
+  }
+  // Show their tile placeholder
 });
 
-// Fallback: when the server broadcasts the call roster, check for any peers we
-// should be connected to but aren't. This catches rejoins, dropped offers, etc.
+// Roster: connect to any call members we don't have connections with
 socket.on('call:roster', ({ members }) => {
-  if (!inCall) return;
   for (const id of members) {
     if (id === socket.id || peers.has(id)) continue;
-    setTimeout(() => {
-      if (!peers.has(id) && inCall) createPeer(id, true);
-    }, 2000);
+    if (inCall) {
+      // I'm in call — initiate to them
+      setTimeout(() => {
+        if (!peers.has(id) && inCall) createPeer(id, true);
+      }, 2000);
+    }
+    // Viewers: the call member will initiate to us when they see us in room:member
   }
 });
 
@@ -695,7 +708,7 @@ socket.on('call:peer-left', ({ id }) => {
 });
 
 socket.on('webrtc:signal', async ({ from, signal }) => {
-  if (!inCall) return;
+  // Accept signals even as a viewer (receive-only) — don't require inCall
   let pc = peers.get(from);
   if (!pc) {
     // Receiving an offer from a peer we don't yet know about — answer side
@@ -792,8 +805,8 @@ function updateCallUI() {
   const joinBtn = $('#joinCallBtn');
   joinBtn.disabled = false;
   joinBtn.style.display = inCall ? 'none' : 'block';
+  joinBtn.textContent = 'Turn on mic + camera';
   $('#callControls').classList.toggle('active', inCall);
-  // reset button states (icons are in the HTML, just toggle classes)
   $('#micBtn').classList.remove('off');
   $('#camBtn').classList.remove('off');
   const fl = $('#filterBtn .filter-label');
