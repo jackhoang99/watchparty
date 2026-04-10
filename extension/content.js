@@ -173,7 +173,14 @@
   const v = document.querySelector('video');
   if (v) attachEvents(v);
 
-  chrome.runtime.onMessage.addListener((msg) => {
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    // --- Scrape all movie/show links from the current page ---
+    if (msg.type === 'scrape-movies') {
+      const movies = scrapePageForMovies();
+      sendResponse({ movies });
+      return true;
+    }
+
     if (msg.type !== 'apply-playback' || !currentVideo) return;
     const p = msg.playback;
     const drift = (Date.now() - p.updatedAt) / 1000;
@@ -187,4 +194,75 @@
       setTimeout(() => { suppress = false; }, 300);
     }
   });
+
+  // --- Scrape all movie/show links from the current page ---
+  function scrapePageForMovies() {
+    const results = [];
+    const seen = new Set();
+    const hostname = location.hostname;
+
+    // Gather all links on the page
+    const allLinks = document.querySelectorAll('a[href]');
+
+    for (const a of allLinks) {
+      const href = a.getAttribute('href');
+      if (!href || href === '#' || href === '/' || href.length < 3) continue;
+
+      // Build full URL
+      let fullUrl;
+      try {
+        fullUrl = new URL(href, location.origin).href;
+      } catch { continue; }
+
+      // Skip external links, anchors, static assets, nav links
+      try {
+        if (new URL(fullUrl).hostname !== hostname) continue;
+      } catch { continue; }
+      if (/\.(css|js|png|jpg|jpeg|gif|svg|ico|woff)/i.test(fullUrl)) continue;
+      if (/\/(search|login|register|signup|sign-in|auth|tag|category|page|user|api|about|contact|privacy|policy|faq|help|terms)\b/i.test(fullUrl)) continue;
+
+      // Get title from: title attr > img alt > text content
+      const img = a.querySelector('img');
+      let title = (a.getAttribute('title') || '').trim();
+      if (!title && img) title = (img.getAttribute('alt') || '').trim();
+      if (!title) {
+        // Get text but skip if it's too short or just whitespace
+        const text = a.textContent.replace(/\s+/g, ' ').trim();
+        if (text.length >= 2 && text.length <= 100) title = text;
+      }
+      if (!title || title.length < 2) continue;
+
+      // Deduplicate by URL
+      if (seen.has(fullUrl)) continue;
+      seen.add(fullUrl);
+
+      // Get poster image
+      let poster = '';
+      if (img) {
+        poster = img.getAttribute('data-src') || img.getAttribute('data-lazy-src') || img.getAttribute('src') || '';
+        // Make poster absolute
+        if (poster && !poster.startsWith('http')) {
+          try { poster = new URL(poster, location.origin).href; } catch { poster = ''; }
+        }
+      }
+
+      // Get any metadata near the link (year, rating, etc.)
+      let meta = '';
+      const parent = a.closest('[class]') || a.parentElement;
+      if (parent) {
+        const metaEl = parent.querySelector('.year, .meta, .info, .rating, [class*="year"], [class*="quality"], [class*="rating"], span, small');
+        if (metaEl && metaEl.textContent.trim().length < 30) {
+          meta = metaEl.textContent.trim();
+        }
+      }
+
+      results.push({ title: title.slice(0, 100), url: fullUrl, poster, meta });
+      if (results.length >= 50) break;
+    }
+
+    // Sort: prefer links with posters (they're more likely to be actual movies)
+    results.sort((a, b) => (b.poster ? 1 : 0) - (a.poster ? 1 : 0));
+
+    return results;
+  }
 })();
