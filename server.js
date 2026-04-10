@@ -11,25 +11,31 @@ function apiFetch(url, options = {}) {
   if (typeof globalThis.fetch === 'function') {
     return globalThis.fetch(url, options);
   }
-  // Fallback using https module
   return new Promise((resolve, reject) => {
     const parsed = new URL(url);
+    const bodyData = options.body || null;
+    const headers = { ...(options.headers || {}) };
+    if (bodyData) headers['Content-Length'] = Buffer.byteLength(bodyData);
     const reqOptions = {
       hostname: parsed.hostname,
       port: parsed.port || 443,
       path: parsed.pathname + parsed.search,
       method: options.method || 'GET',
-      headers: options.headers || {}
+      headers
     };
     const req = https.request(reqOptions, (res) => {
       let body = '';
       res.on('data', chunk => body += chunk);
       res.on('end', () => {
-        resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, json: () => Promise.resolve(JSON.parse(body)) });
+        resolve({
+          ok: res.statusCode >= 200 && res.statusCode < 300,
+          status: res.statusCode,
+          json: () => { try { return Promise.resolve(JSON.parse(body)); } catch { return Promise.resolve({ error: body }); } }
+        });
       });
     });
     req.on('error', reject);
-    if (options.body) req.write(options.body);
+    if (bodyData) req.write(bodyData);
     req.end();
   });
 }
@@ -242,10 +248,18 @@ io.on('connection', (socket) => {
   });
 
   // Virtual browser — create a shared browsing session via Hyperbeam
+  let vbrowserCreating = false;
   socket.on('vbrowser:start', async ({ url }) => {
     if (!currentRoomId) return;
     const room = rooms.get(currentRoomId);
     if (!room) return;
+    if (room.vbrowser) {
+      // Session already exists — just send it
+      socket.emit('vbrowser:started', room.vbrowser);
+      return;
+    }
+    if (vbrowserCreating) return;
+    vbrowserCreating = true;
     const apiKey = process.env.HYPERBEAM_API_KEY;
     if (!apiKey) {
       socket.emit('vbrowser:error', { message: 'Virtual browser not configured — set HYPERBEAM_API_KEY' });
@@ -269,6 +283,8 @@ io.on('connection', (socket) => {
     } catch (err) {
       console.error('Hyperbeam error:', err);
       socket.emit('vbrowser:error', { message: err.message || 'Failed to create virtual browser' });
+    } finally {
+      vbrowserCreating = false;
     }
   });
 

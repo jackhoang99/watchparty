@@ -928,7 +928,19 @@ document.addEventListener('visibilitychange', () => {
   socket.on('vbrowser:error', ({ message }) => {
     startBtn.textContent = 'Launch';
     startBtn.disabled = false;
-    alert('Virtual browser error: ' + message);
+    // Show error inline instead of alert
+    let errEl = document.getElementById('vbrowser-error');
+    if (!errEl) {
+      errEl = document.createElement('p');
+      errEl.id = 'vbrowser-error';
+      errEl.style.cssText = 'font-size:11px;color:#ff6b6b;margin-top:8px;';
+      startBtn.parentElement.appendChild(errEl);
+    }
+    if (message.includes('429')) {
+      errEl.textContent = 'Rate limit reached — wait a few minutes and try again, or upgrade your Hyperbeam plan.';
+    } else {
+      errEl.textContent = message;
+    }
   });
 
   // Late joiner — check if a vbrowser session is already active
