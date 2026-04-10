@@ -432,15 +432,11 @@ $('#chat-form').onsubmit = (e) => {
 };
 
 // ---------- WebRTC voice + video call ----------
-const ICE_SERVERS = [
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' },
-  // Free TURN relays (Metered.ca open TURN servers)
-  { urls: 'turn:a.relay.metered.ca:80', username: 'e8dd65b92ed8cd8c3bc4ceee', credential: 'xJP4sDh+Q0GZbOhd' },
-  { urls: 'turn:a.relay.metered.ca:80?transport=tcp', username: 'e8dd65b92ed8cd8c3bc4ceee', credential: 'xJP4sDh+Q0GZbOhd' },
-  { urls: 'turn:a.relay.metered.ca:443', username: 'e8dd65b92ed8cd8c3bc4ceee', credential: 'xJP4sDh+Q0GZbOhd' },
-  { urls: 'turns:a.relay.metered.ca:443', username: 'e8dd65b92ed8cd8c3bc4ceee', credential: 'xJP4sDh+Q0GZbOhd' },
-];
+// ICE servers — fetched from server (includes Cloudflare TURN if configured)
+let ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+fetch('/api/turn').then(r => r.json()).then(servers => {
+  if (Array.isArray(servers) && servers.length) ICE_SERVERS = servers;
+}).catch(() => {});
 
 let localStream = null;       // what we send to peers (canvas-processed when video is on)
 let rawStream = null;         // what getUserMedia gave us (real camera + mic)

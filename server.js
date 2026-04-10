@@ -113,6 +113,32 @@ function maybeReap(roomId) {
 }
 
 // ---------- HTTP routes ----------
+// TURN credentials endpoint — generates fresh credentials from Cloudflare TURN
+app.get('/api/turn', async (req, res) => {
+  const apiKey = process.env.CLOUDFLARE_TURN_KEY;
+  if (!apiKey) {
+    return res.json([
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' }
+    ]);
+  }
+  try {
+    const r = await fetch('https://rtc.live.cloudflare.com/v1/turn/keys/' + apiKey + '/credentials/generate', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ttl: 86400 })
+    });
+    const data = await r.json();
+    if (data.iceServers) {
+      res.json(data.iceServers);
+    } else {
+      res.json([{ urls: 'stun:stun.l.google.com:19302' }]);
+    }
+  } catch {
+    res.json([{ urls: 'stun:stun.l.google.com:19302' }]);
+  }
+});
+
 // Serve extension folder for download
 app.use('/extension', express.static(path.join(__dirname, 'extension')));
 
