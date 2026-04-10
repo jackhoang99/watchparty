@@ -185,6 +185,11 @@ io.on('connection', (socket) => {
     broadcastPlayback(currentRoomId, room.playback, socket.id);
   });
 
+  socket.on('sourceType:change', ({ type }) => {
+    if (!currentRoomId) return;
+    socket.to(currentRoomId).emit('sourceType:change', { type: String(type || 'youtube') });
+  });
+
   socket.on('chat:message', (msg) => {
     if (!currentRoomId) return;
     const room = rooms.get(currentRoomId);

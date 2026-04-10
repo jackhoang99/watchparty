@@ -271,7 +271,19 @@ function updateEmptyCards() {
     nativeEl.style.display = 'none';
   }
 }
-$('#sourceType').addEventListener('change', updateEmptyCards);
+$('#sourceType').addEventListener('change', () => {
+  updateEmptyCards();
+  // Broadcast the source type change to everyone in the room
+  socket.emit('sourceType:change', { type: $('#sourceType').value });
+});
+
+socket.on('sourceType:change', ({ type }) => {
+  if ($('#sourceType').value !== type) {
+    $('#sourceType').value = type;
+    updateEmptyCards();
+  }
+});
+
 updateEmptyCards(); // set initial state
 
 $('#loadSource').onclick = () => {
