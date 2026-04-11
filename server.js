@@ -358,9 +358,7 @@ io.on('connection', (socket) => {
     if (!room.callMembers) room.callMembers = new Set();
     if (room.callMembers.has(socket.id)) return;
     room.callMembers.add(socket.id);
-    // Tell ALL room members (not just call members) that someone joined the call
-    // This lets viewers create receive-only connections
-    io.to(currentRoomId).emit('call:peer-joined', { id: socket.id });
+    socket.to(currentRoomId).emit('call:peer-joined', { id: socket.id });
     io.to(currentRoomId).emit('call:roster', { members: Array.from(room.callMembers) });
   });
 

@@ -439,16 +439,26 @@ $('#chat-form').onsubmit = (e) => {
 
 // ---------- WebRTC voice + video call ----------
 // ICE servers — fetched from server (includes TURN if configured)
-let ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+let ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' }
+];
 fetch('/api/turn').then(r => r.json()).then(servers => {
-  if (Array.isArray(servers) && servers.length) ICE_SERVERS = servers;
+  if (Array.isArray(servers) && servers.length) {
+    // Merge: keep default STUN and add any TURN servers from the API
+    const extraStun = ICE_SERVERS.filter(s => {
+      const u = Array.isArray(s.urls) ? s.urls : [s.urls || ''];
+      return u.some(x => x.startsWith('stun:'));
+    });
+    ICE_SERVERS = [...extraStun, ...servers];
+  }
   const hasTURN = ICE_SERVERS.some(s => {
     const u = Array.isArray(s.urls) ? s.urls : [s.urls || ''];
     return u.some(x => x.startsWith('turn:') || x.startsWith('turns:'));
   });
   console.log('[ICE] servers:', JSON.stringify(ICE_SERVERS));
   console.log('[ICE] has TURN:', hasTURN);
-  if (!hasTURN) console.warn('[ICE] NO TURN SERVER — cross-country connections will likely fail (STUN only)');
+  if (!hasTURN) console.warn('[ICE] NO TURN SERVER — cross-country connections may fail (STUN only)');
 }).catch((err) => { console.error('[ICE] failed to fetch TURN credentials:', err); });
 
 let localStream = null;
