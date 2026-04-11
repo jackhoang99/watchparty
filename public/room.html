@@ -181,9 +181,9 @@
   </header>
 
   <!-- Main content -->
-  <main class="flex flex-1 min-h-0">
+  <main class="flex flex-col md:flex-row flex-1 min-h-0 overflow-auto md:overflow-hidden">
     <!-- Player area -->
-    <section class="player-area flex-1 bg-black relative flex items-center justify-center min-w-0">
+    <section class="player-area flex-1 bg-black relative flex items-center justify-center min-w-0 min-h-[40vh] md:min-h-0">
 
       <!-- Virtual browser (Hyperbeam embed) -->
       <div id="vbrowser-bar" class="absolute bottom-0 left-0 right-0 z-20 flex items-center justify-between px-4 py-1.5 bg-black/80 backdrop-blur text-white text-sm" style="display:none">
@@ -291,7 +291,7 @@
     </section>
 
     <!-- Sidebar -->
-    <aside class="sidebar w-80 border-l border-gray-800 flex flex-col min-h-0 shrink-0 bg-[#0c0c0c]">
+    <aside class="sidebar w-full md:w-80 border-t md:border-t-0 md:border-l border-gray-800 flex flex-col min-h-0 shrink-0 bg-[#0c0c0c]">
 
       <!-- Watching -->
       <div class="px-4 pt-4 pb-3 border-b border-gray-800">
@@ -327,7 +327,7 @@
             Leave
           </button>
         </div>
-        <div id="video-grid" class="grid grid-cols-2 gap-1.5 max-h-64 overflow-y-auto empty:hidden"></div>
+        <div id="video-grid" class="grid grid-cols-2 gap-1.5 overflow-y-auto empty:hidden"></div>
       </div>
 
       <!-- Chat -->
