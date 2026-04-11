@@ -155,10 +155,20 @@ app.get('/api/turn', async (req, res) => {
   if (meteredKey) {
     try {
       const appName = process.env.METERED_APP_NAME || 'watchparty';
-      const r = await apiFetch(`https://${appName}.metered.live/api/v1/turn/credentials?apiKey=${meteredKey}`, {});
+      const url = `https://${appName}.metered.live/api/v1/turn/credentials?apiKey=${meteredKey}`;
+      console.log('[TURN] fetching Metered credentials from', appName + '.metered.live');
+      const r = await apiFetch(url, {});
       const creds = await r.json();
-      if (Array.isArray(creds) && creds.length) return res.json(creds);
-    } catch {}
+      if (Array.isArray(creds) && creds.length) {
+        console.log('[TURN] got', creds.length, 'ICE servers from Metered');
+        return res.json(creds);
+      }
+      console.warn('[TURN] Metered returned unexpected response:', JSON.stringify(creds));
+    } catch (err) {
+      console.error('[TURN] Metered fetch failed:', err.message);
+    }
+  } else {
+    console.warn('[TURN] no METERED_API_KEY set');
   }
 
   // Option 2: Cloudflare TURN

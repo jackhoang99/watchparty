@@ -442,7 +442,14 @@ $('#chat-form').onsubmit = (e) => {
 let ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
 fetch('/api/turn').then(r => r.json()).then(servers => {
   if (Array.isArray(servers) && servers.length) ICE_SERVERS = servers;
-}).catch(() => {});
+  const hasTURN = ICE_SERVERS.some(s => {
+    const u = Array.isArray(s.urls) ? s.urls : [s.urls || ''];
+    return u.some(x => x.startsWith('turn:') || x.startsWith('turns:'));
+  });
+  console.log('[ICE] servers:', JSON.stringify(ICE_SERVERS));
+  console.log('[ICE] has TURN:', hasTURN);
+  if (!hasTURN) console.warn('[ICE] NO TURN SERVER — cross-country connections will likely fail (STUN only)');
+}).catch((err) => { console.error('[ICE] failed to fetch TURN credentials:', err); });
 
 let localStream = null;
 let inCall = false;
@@ -493,27 +500,57 @@ function leaveCall() {
 }
 
 function createPeer(remoteId, isInitiator) {
+  console.log(`[PEER] creating peer for ${remoteId}, initiator=${isInitiator}`);
   const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
   peers.set(remoteId, pc);
 
   if (localStream) {
     localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+    console.log(`[PEER] added ${localStream.getTracks().length} tracks (audio=${localStream.getAudioTracks().length}, video=${localStream.getVideoTracks().length})`);
   }
 
   pc.onicecandidate = (e) => {
     if (e.candidate) {
+      console.log(`[ICE] candidate for ${remoteId}: type=${e.candidate.type} protocol=${e.candidate.protocol} ${e.candidate.candidate.substring(0, 80)}`);
       socket.emit('webrtc:signal', {
         to: remoteId,
         signal: { type: 'ice', candidate: e.candidate }
       });
+    } else {
+      console.log(`[ICE] gathering complete for ${remoteId}`);
+    }
+  };
+
+  pc.onicegatheringstatechange = () => {
+    console.log(`[ICE] gathering state for ${remoteId}: ${pc.iceGatheringState}`);
+  };
+
+  pc.oniceconnectionstatechange = () => {
+    console.log(`[ICE] connection state for ${remoteId}: ${pc.iceConnectionState}`);
+    if (pc.iceConnectionState === 'failed') {
+      console.error(`[ICE] FAILED for ${remoteId} — likely no TURN server to relay across NAT/firewall`);
     }
   };
 
   pc.ontrack = (e) => {
+    console.log(`[PEER] got remote track from ${remoteId}: kind=${e.track.kind}`);
     addRemoteTile(remoteId, e.streams[0]);
   };
 
   pc.onconnectionstatechange = () => {
+    console.log(`[PEER] connection state for ${remoteId}: ${pc.connectionState}`);
+    if (pc.connectionState === 'connected') {
+      // Log which candidate pair won
+      pc.getStats().then(stats => {
+        stats.forEach(s => {
+          if (s.type === 'candidate-pair' && s.state === 'succeeded') {
+            const local = stats.get(s.localCandidateId);
+            const remote = stats.get(s.remoteCandidateId);
+            console.log(`[PEER] connected via: local=${local?.candidateType}(${local?.protocol}) remote=${remote?.candidateType}(${remote?.protocol})`);
+          }
+        });
+      });
+    }
     if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
       removeRemoteTile(remoteId);
       peers.delete(remoteId);
@@ -561,7 +598,8 @@ socket.on('call:peer-left', ({ id }) => {
 });
 
 socket.on('webrtc:signal', async ({ from, signal }) => {
-  if (!inCall) return;
+  console.log(`[SIGNAL] received ${signal.type} from ${from}`);
+  if (!inCall) { console.log('[SIGNAL] ignored — not in call'); return; }
   let pc = peers.get(from);
   if (!pc) {
     pc = createPeer(from, false);
@@ -571,17 +609,19 @@ socket.on('webrtc:signal', async ({ from, signal }) => {
       await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
+      console.log(`[SIGNAL] sending answer to ${from}`);
       socket.emit('webrtc:signal', {
         to: from,
         signal: { type: 'answer', sdp: pc.localDescription }
       });
     } else if (signal.type === 'answer') {
       await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+      console.log(`[SIGNAL] set remote answer from ${from}`);
     } else if (signal.type === 'ice') {
       await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
     }
   } catch (err) {
-    console.warn('signal handling failed', err);
+    console.error(`[SIGNAL] handling failed for ${signal.type} from ${from}:`, err);
   }
 });
 
