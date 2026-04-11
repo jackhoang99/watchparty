@@ -528,7 +528,17 @@ function createPeer(remoteId, isInitiator) {
   pc.oniceconnectionstatechange = () => {
     console.log(`[ICE] connection state for ${remoteId}: ${pc.iceConnectionState}`);
     if (pc.iceConnectionState === 'failed') {
-      console.error(`[ICE] FAILED for ${remoteId} — likely no TURN server to relay across NAT/firewall`);
+      console.error(`[ICE] FAILED for ${remoteId} — attempting ICE restart`);
+      if (isInitiator) {
+        pc.createOffer({ iceRestart: true }).then(offer => {
+          return pc.setLocalDescription(offer);
+        }).then(() => {
+          socket.emit('webrtc:signal', {
+            to: remoteId,
+            signal: { type: 'offer', sdp: pc.localDescription }
+          });
+        }).catch(err => console.error('[ICE] restart failed:', err));
+      }
     }
   };
 
