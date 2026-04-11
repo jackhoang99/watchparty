@@ -445,21 +445,8 @@ fetch('/api/turn').then(r => r.json()).then(servers => {
 }).catch(() => {});
 
 let localStream = null;
-let rawStream = null;
 let inCall = false;
 const peers = new Map();
-
-const FILTERS = [
-  { name: 'Filter', css: 'none' },
-  { name: 'Soft',   css: 'blur(0.6px) brightness(1.06) contrast(0.96) saturate(1.08)' },
-  { name: 'Glow',   css: 'blur(0.4px) brightness(1.15) saturate(1.22) contrast(1.02)' },
-  { name: 'Dreamy', css: 'blur(1.4px) brightness(1.12) saturate(1.18) hue-rotate(-6deg)' }
-];
-let filterIdx = 0;
-let processCanvas = null;
-let processCtx = null;
-let processVideo = null;
-let processRAF = null;
 
 function nameForId(id) {
   const m = memberCache.find(x => x.id === id);
@@ -470,20 +457,19 @@ async function joinCall() {
   if (inCall) return;
   $('#joinCallBtn').disabled = true;
   try {
-    rawStream = await navigator.mediaDevices.getUserMedia({
+    localStream = await navigator.mediaDevices.getUserMedia({
       audio: true,
       video: { width: { ideal: 320 }, height: { ideal: 240 } }
     });
   } catch (err) {
     try {
-      rawStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (e) {
       $('#joinCallBtn').disabled = false;
       alert('Could not access mic or camera: ' + (e?.message || e));
       return;
     }
   }
-  localStream = setupProcessedStream(rawStream);
   inCall = true;
   addLocalTile();
   socket.emit('call:join');
@@ -498,85 +484,12 @@ function leaveCall() {
   }
   peers.clear();
   document.querySelectorAll('#video-grid .video-tile').forEach(el => el.remove());
-  teardownProcessedStream();
-  if (rawStream) {
-    rawStream.getTracks().forEach(t => t.stop());
-    rawStream = null;
+  if (localStream) {
+    localStream.getTracks().forEach(t => t.stop());
+    localStream = null;
   }
-  localStream = null;
   inCall = false;
-  filterIdx = 0;
   updateCallUI();
-}
-
-// Canvas pipeline for beauty filters
-function setupProcessedStream(source) {
-  const videoTrack = source.getVideoTracks()[0];
-  if (!videoTrack) return source;
-
-  processCanvas = document.createElement('canvas');
-  processCtx = processCanvas.getContext('2d');
-  const settings = videoTrack.getSettings();
-  processCanvas.width = settings.width || 320;
-  processCanvas.height = settings.height || 240;
-
-  processVideo = document.createElement('video');
-  processVideo.srcObject = new MediaStream([videoTrack]);
-  processVideo.muted = true;
-  processVideo.playsInline = true;
-
-  const syncCanvasSize = () => {
-    if (!processVideo) return;
-    const vw = processVideo.videoWidth;
-    const vh = processVideo.videoHeight;
-    if (vw && vh && (processCanvas.width !== vw || processCanvas.height !== vh)) {
-      processCanvas.width = vw;
-      processCanvas.height = vh;
-    }
-  };
-  processVideo.addEventListener('loadedmetadata', syncCanvasSize);
-  processVideo.addEventListener('resize', syncCanvasSize);
-  processVideo.play().catch(() => {});
-
-  // Use setInterval instead of requestAnimationFrame so it keeps running
-  // when the tab is in the background (rAF gets throttled to ~1fps)
-  processRAF = setInterval(() => {
-    if (processVideo && processVideo.readyState >= 2) {
-      if (processCanvas.width !== processVideo.videoWidth ||
-          processCanvas.height !== processVideo.videoHeight) {
-        syncCanvasSize();
-      }
-      processCtx.filter = FILTERS[filterIdx].css;
-      processCtx.drawImage(processVideo, 0, 0, processCanvas.width, processCanvas.height);
-    }
-  }, 33); // ~30fps
-
-  const canvasStream = processCanvas.captureStream(30);
-  const out = new MediaStream();
-  canvasStream.getVideoTracks().forEach(t => out.addTrack(t));
-  source.getAudioTracks().forEach(t => out.addTrack(t));
-  return out;
-}
-
-function teardownProcessedStream() {
-  if (processRAF) clearInterval(processRAF);
-  processRAF = null;
-  if (processVideo) {
-    try { processVideo.pause(); } catch {}
-    processVideo.srcObject = null;
-    processVideo = null;
-  }
-  processCanvas = null;
-  processCtx = null;
-}
-
-function cycleFilter() {
-  if (!inCall) return;
-  filterIdx = (filterIdx + 1) % FILTERS.length;
-  const f = FILTERS[filterIdx];
-  const label = $('#filterBtn .filter-label');
-  if (label) label.textContent = f.name;
-  $('#filterBtn').classList.toggle('on', filterIdx !== 0);
 }
 
 function createPeer(remoteId, isInitiator) {
@@ -722,8 +635,8 @@ function removeRemoteTile(peerId) {
 
 // ---------- mic / cam toggles ----------
 function toggleMic() {
-  if (!rawStream) return;
-  const tracks = rawStream.getAudioTracks();
+  if (!localStream) return;
+  const tracks = localStream.getAudioTracks();
   if (!tracks.length) return;
   const enabled = !tracks[0].enabled;
   tracks.forEach(t => t.enabled = enabled);
@@ -732,32 +645,27 @@ function toggleMic() {
 }
 
 function toggleCam() {
-  if (!rawStream) return;
-  const tracks = rawStream.getVideoTracks();
+  if (!localStream) return;
+  const tracks = localStream.getVideoTracks();
   if (!tracks.length) return;
   const enabled = !tracks[0].enabled;
   tracks.forEach(t => t.enabled = enabled);
-  $('#camBtn').classList.toggle('off', !enabled);
+  const btn = $('#camBtn');
+  btn.classList.toggle('off', !enabled);
+  btn.textContent = enabled ? 'Cam on' : 'Cam off';
 }
 
 function updateCallUI() {
   const joinBtn = $('#joinCallBtn');
   joinBtn.disabled = false;
   joinBtn.style.display = inCall ? 'none' : 'block';
-  joinBtn.textContent = 'Turn on mic + camera';
   $('#callControls').classList.toggle('active', inCall);
-  $('#micBtn').classList.remove('off');
-  $('#camBtn').classList.remove('off');
-  const fl = $('#filterBtn .filter-label');
-  if (fl) fl.textContent = FILTERS[filterIdx].name === 'Filter' ? 'Filter' : FILTERS[filterIdx].name;
-  $('#filterBtn').classList.toggle('on', filterIdx !== 0);
 }
 
 $('#joinCallBtn').onclick = joinCall;
 $('#leaveCallBtn').onclick = leaveCall;
 $('#micBtn').onclick = toggleMic;
 $('#camBtn').onclick = toggleCam;
-$('#filterBtn').onclick = cycleFilter;
 
 // Clean up on tab close / refresh so peers see us leave instantly
 window.addEventListener('beforeunload', () => {
