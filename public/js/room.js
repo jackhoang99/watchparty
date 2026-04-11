@@ -681,6 +681,17 @@ function addRemoteTile(peerId, stream) {
   video.autoplay = true;
   video.playsInline = true;
   video.srcObject = stream;
+  // Ensure audio plays — mobile browsers may block autoplay with sound
+  video.play().catch(() => {
+    // Autoplay blocked — will play on next user tap
+    const resumeAudio = () => {
+      video.play().catch(() => {});
+      document.removeEventListener('touchstart', resumeAudio);
+      document.removeEventListener('click', resumeAudio);
+    };
+    document.addEventListener('touchstart', resumeAudio, { once: true });
+    document.addEventListener('click', resumeAudio, { once: true });
+  });
   const label = document.createElement('div');
   label.className = 'tile-label';
   label.textContent = nameForId(peerId);
