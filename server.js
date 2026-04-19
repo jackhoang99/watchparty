@@ -288,7 +288,7 @@ io.on('connection', (socket) => {
       const resp = await apiFetch('https://engine.hyperbeam.com/v0/vm', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ start_url: url || 'https://google.com', control_disable_default: true })
+        body: JSON.stringify({ start_url: url || 'https://google.com' })
       });
       if (!resp.ok) {
         const errBody = await resp.json().catch(() => ({}));
